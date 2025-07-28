@@ -32,4 +32,5 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: jaeger-oauth-proxy-sa
+  namespace: opentelemetry
 ---
