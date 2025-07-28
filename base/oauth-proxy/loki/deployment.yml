@@ -45,14 +45,14 @@ spec:
               containerPort: 8443
               protocol: TCP
           volumeMounts:
-            - name: secret-jaeger-tls
+            - name: secret-loki-tls
               mountPath: /etc/tls/private
             - name: secret-session-secret
               mountPath: /etc/proxy/secrets
       volumes:
-        - name: secret-jaeger-tls
+        - name: secret-loki-tls
           secret:
-            secretName: jaeger-tls
+            secretName: loki-tls
             defaultMode: 420
         - name: secret-session-secret
           secret:
