@@ -1,0 +1,23 @@
+## for loki-distributor
+
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo update
+
+helm upgrade --install loki grafana/loki-distributed \
+  --namespace opentelemetry \
+  -f base/logs/loki-values.yml
+
+oc adm policy add-scc-to-user anyuid -z loki-loki-distributed
+
+
+## for fluent-bit
+
+helm repo add fluent https://fluent.github.io/helm-charts
+helm repo update
+
+helm upgrade --install fluentbit fluent/fluent-bit \
+  --namespace opentelemetry \
+  -f base/logs/fluentbit-values.yml
+
+Then in OpenShift:
+oc adm policy add-scc-to-user privileged -z fluent-bit
