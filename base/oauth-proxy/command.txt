@@ -13,7 +13,7 @@ oc create token loki-oauth-proxy-sa --duration=8760h
 ---
 
 ---
-oc adm policy add-cluster-role-to-user cluster-monitoring-view -z loki-oauth-proxy-sa
-oc adm policy add-cluster-role-to-user system:auth-delegator -z loki-oauth-proxy-sa
-oc create token loki-oauth-proxy-sa --duration=8760h
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z prometheus-oauth-proxy-sa
+oc adm policy add-cluster-role-to-user system:auth-delegator -z prometheus-oauth-proxy-sa
+oc create token prometheus-oauth-proxy-sa --duration=8760h
 ---

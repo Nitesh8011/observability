@@ -21,7 +21,7 @@ spec:
         args:
           - '--https-address=:8443'
           - '--provider=openshift'
-          - '--openshift-service-account=prometheus-oauth-proxy'
+          - '--openshift-service-account=prometheus-oauth-proxy-sa'
           - '--upstream=http://prometheus-operated:9090'
           - '--tls-cert=/etc/tls/private/tls.crt'
           - '--tls-key=/etc/tls/private/tls.key'
