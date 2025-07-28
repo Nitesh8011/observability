@@ -5,7 +5,12 @@ resources:
 - ../base/oauth-proxy
 - ../base/opentelemetry
 - ../base/prometheus
--  grafana
+- grafana
+- opentelemetry
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: observability-stack
 
 patches:
 - path: prometheus/patch.yml

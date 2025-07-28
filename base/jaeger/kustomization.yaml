@@ -3,3 +3,8 @@ kind: Kustomization
 resources:
 - ./jaeger.yml
 - ./elasticsearch.yml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: jaeger
+      app.kubernetes.io/component: tracing

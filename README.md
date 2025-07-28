@@ -68,6 +68,17 @@ kubectl apply -k overlays/
 
 **Note:** The overlays deployment includes Grafana with custom datasource configurations (Loki, Jaeger, Prometheus) and Prometheus patches for optimized settings.
 
+**Labeling Strategy:**
+All resources are labeled with consistent Kubernetes-standard labels for better organization and management:
+- `app.kubernetes.io/part-of: observability-stack` - Applied to all resources
+- `app.kubernetes.io/managed-by: kustomize` - Applied to all resources
+- Component-specific labels:
+  - Jaeger: `app.kubernetes.io/name: jaeger`, `app.kubernetes.io/component: tracing`
+  - OpenTelemetry: `app.kubernetes.io/name: opentelemetry`, `app.kubernetes.io/component: collector`
+  - Prometheus: `app.kubernetes.io/name: prometheus`, `app.kubernetes.io/component: monitoring`
+  - Grafana: `app.kubernetes.io/name: grafana`, `app.kubernetes.io/component: visualization`
+  - OAuth Proxy: `app.kubernetes.io/name: oauth-proxy-{service}`, `app.kubernetes.io/component: security`
+
 ### 2. Deploy Logging Stack with Helm
 
 The logging components (Loki and Fluent Bit) can be deployed using Helm charts with the provided values files.
@@ -80,14 +91,14 @@ helm repo add grafana https://grafana.github.io/helm-charts
 helm repo update
 
 # Create namespace
-kubectl create namespace redhat-monitoring
+kubectl create namespace opentelemetry
 
 # Configure S3 credentials (update the secret with your values)
-kubectl apply -f base/logs/secret.yml -n redhat-monitoring
+kubectl apply -f base/logs/secret.yml -n opentelemetry
 
 # Deploy Loki with custom values
 helm install loki grafana/loki-distributed \
-  --namespace redhat-monitoring \
+  --namespace opentelemetry \
   --values base/logs/loki-value.yml
 ```
 
@@ -100,7 +111,7 @@ helm repo update
 
 # Deploy Fluent Bit with custom values
 helm install fluent-bit fluent/fluent-bit \
-  --namespace redhat-monitoring \
+  --namespace opentelemetry \
   --values base/logs/fluentbit-value.yml
 ```
 
@@ -242,10 +253,10 @@ Check component logs:
 
 ```bash
 # Loki components
-kubectl logs -l app.kubernetes.io/name=loki -n redhat-monitoring
+kubectl logs -l app.kubernetes.io/name=loki -n opentelemetry
 
 # Fluent Bit
-kubectl logs -l app.kubernetes.io/name=fluent-bit -n redhat-monitoring
+kubectl logs -l app.kubernetes.io/name=fluent-bit -n opentelemetry
 
 # OpenTelemetry Collector
 kubectl logs -l app.kubernetes.io/name=opentelemetry-collector

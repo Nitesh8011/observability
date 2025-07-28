@@ -4,3 +4,8 @@ resources:
 - ./jaeger
 - ./prometheus
 - ./loki
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: oauth-proxy
+      app.kubernetes.io/component: security

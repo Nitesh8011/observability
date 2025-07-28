@@ -35,7 +35,7 @@ spec:
             - '--https-address=:8443'
             - '--provider=openshift'
             - '--openshift-service-account=loki-oauth-proxy-sa'
-            - '--upstream=http://loki-loki-distributed-gateway.redhat-monitoring:80'
+            - '--upstream=http://loki-loki-distributed-gateway.opentelemetry:80'
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
             - '--cookie-secret-file=/etc/proxy/secrets/session_secret'

@@ -4,3 +4,8 @@ resources:
 - ./loki-ds.yml
 - ./jaeger-ds.yml
 - ./prometheus-ds.yml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/component: visualization

@@ -5,3 +5,9 @@ resources:
 - ./route.yml
 - ./rbac.yml
 - ./deployment.yml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: oauth-proxy-prometheus
+      app.kubernetes.io/component: security
+      app.kubernetes.io/instance: prometheus

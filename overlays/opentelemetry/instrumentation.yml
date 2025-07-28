@@ -2,9 +2,11 @@ apiVersion: opentelemetry.io/v1alpha1
 kind: Instrumentation
 metadata:
   name: instrumentation
+  labels:
+    app: opentelemetry-instrumentation
 spec:
   exporter:
-    endpoint: 'http://otel-collector-collector.redhat-monitoring:4318'
+    endpoint: 'http://otel-collector-collector.opentelemetry:4318'
   java:
     env:
       - name: OTEL_LOGS_EXPORTER

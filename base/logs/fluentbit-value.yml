@@ -182,7 +182,7 @@ config:
     [OUTPUT]
         Name        loki
         Match       kube.*
-        Host        loki-loki-distributed-distributor.redhat-monitoring.svc.cluster.local
+        Host        loki-loki-distributed-distributor.opentelemetry.svc.cluster.local
         Port        3100
         URI         /loki/api/v1/push
         Buffer_Size 102400

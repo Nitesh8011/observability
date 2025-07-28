@@ -37,7 +37,7 @@ spec:
   ingress:
     enabled: false
     openshift:
-      sar: '{"namespace": "redhat-monitoring", "resource": "pods", "verb": "get"}'
+      sar: '{"namespace": "opentelemetry", "resource": "pods", "verb": "get"}'
     security: none
   volumes:
     - name: certificates
