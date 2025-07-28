@@ -1,0 +1,73 @@
+apiVersion: jaegertracing.io/v1
+kind: Jaeger
+metadata:
+  name: jaeger
+spec:
+  query:
+    options:
+      query.bearer-token-propagation: true
+    replicas: 2
+    resources:
+      limits:
+        memory: 2Gi
+      requests:
+        cpu: 200m
+        memory: 1Gi
+  collector:
+    replicas: 2
+    resources:
+      limits:
+        memory: 2Gi
+      requests:
+        cpu: 200m
+        memory: 1Gi
+  strategy: production
+  ui:
+    options:
+      dependencies:
+        menuEnabled: false
+      menu:
+        - anchorTarget: _self
+          label: Log Out
+          url: /oauth/sign_in
+  volumeMounts:
+    - mountPath: /es/certificates/
+      name: certificates
+      readOnly: true
+  ingress:
+    enabled: false
+    openshift:
+      sar: '{"namespace": "redhat-monitoring", "resource": "pods", "verb": "get"}'
+    security: none
+  volumes:
+    - name: certificates
+      secret:
+        secretName: jaeger-es-http-certs-public
+  storage:
+    dependencies:
+      schedule: 55 23 * * *
+    esIndexCleaner:
+      enabled: true
+      numberOfDays: 30
+      schedule: 55 23 * * *
+    type: elasticsearch
+    secretName: jaeger-es-elastic-user
+    elasticsearch:
+      name: jaeger
+      nodeCount: 3
+      redundancyPolicy: SingleRedundancy
+      resources:
+        limits:
+          cpu: '1'
+          memory: 4Gi
+        requests:
+          cpu: 500m
+          memory: 2Gi
+    options:
+      es.password: changeme
+      es.server-urls: 'https://jaeger-es-http:9200'
+      es.tls.ca: /es/certificates/ca.crt
+      es.tls.enabled: 'true'
+      es.username: elastic
+    esRollover:
+      schedule: 0 0 * * *

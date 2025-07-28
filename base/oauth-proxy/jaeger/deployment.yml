@@ -1,0 +1,60 @@
+---
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: jaeger-oauth-proxy-d
+  labels:
+    app: jaeger-oauth-proxy
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  replicas: 1
+  selector:
+    matchLabels:
+      app: jaeger-oauth-proxy
+  template:
+    metadata:
+      labels:
+        app: jaeger-oauth-proxy
+    spec:
+      serviceAccountName: jaeger-oauth-proxy-sa
+      restartPolicy: Always
+      dnsPolicy: ClusterFirst
+      containers:
+        - name: oauth-proxy
+          image: 'quay.io/openshift/origin-oauth-proxy:4.12'
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: public
+              containerPort: 8443
+              protocol: TCP
+          args:
+            - '--https-address=:8443'
+            - '--provider=openshift'
+            - '--openshift-service-account=jaeger-oauth-proxy-sa'
+            - '--upstream=http://jaeger-production-query:16686'
+            - '--tls-cert=/etc/tls/private/tls.crt'
+            - '--tls-key=/etc/tls/private/tls.key'
+            - '--cookie-secret-file=/etc/proxy/secrets/session_secret'
+            - '--openshift-ca=/etc/pki/tls/cert.pem'
+            - '--openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+            - '--skip-auth-regex=^/metrics'
+            - '--skip-auth-regex=^/api/.*'
+          volumeMounts:
+            - name: secret-jaeger-tls
+              mountPath: /etc/tls/private
+            - name: secret-session-secret
+              mountPath: /etc/proxy/secrets
+      volumes:
+        - name: secret-jaeger-tls
+          secret:
+            secretName: jaeger-tls
+            defaultMode: 420
+        - name: secret-session-secret
+          secret:
+            secretName: session-secret
+            defaultMode: 420
+---

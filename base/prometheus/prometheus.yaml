@@ -1,0 +1,53 @@
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus
+spec:
+  evaluationInterval: 30s
+  serviceAccountName: prometheus-k8s
+  serviceMonitorSelector:
+    matchLabels:
+      prometheus: grafana
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 500m
+      memory: 1Gi
+  thanos:
+    blockSize: 2h
+    image: 'quay.io/thanos/thanos:v0.39.2'
+    logLevel: info
+    objectStorageConfig:
+      key: object-store.yaml
+      name: prometheus-thanos-s3-secret
+    version: v0.39.2
+  podMonitorNamespaceSelector: {}
+  externalLabels:
+    cluster: prod-a
+  portName: web
+  podMonitorSelector:
+    matchLabels:
+      prometheus: grafana
+  serviceMonitorNamespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - qam
+          - load-testing
+  scrapeInterval: 30s
+  storage:
+    volumeClaimTemplate:
+      metadata:
+        name: prometheus-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 30Gi
+        storageClassName: gp3-csi
+  replicas: 2
+  retention: 30d

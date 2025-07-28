@@ -1,0 +1,19 @@
+oc create secret generic session-secret --from-literal=session_secret=$(head -c32 /dev/urandom | base64)
+
+---
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z jaeger-oauth-proxy-sa
+oc adm policy add-cluster-role-to-user system:auth-delegator -z jaeger-oauth-proxy-sa
+oc create token jaeger-oauth-proxy-sa --duration=87600h
+---
+
+---
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z loki-oauth-proxy-sa
+oc adm policy add-cluster-role-to-user system:auth-delegator -z loki-oauth-proxy-sa
+oc create token loki-oauth-proxy-sa --duration=8760h
+---
+
+---
+oc adm policy add-cluster-role-to-user cluster-monitoring-view -z loki-oauth-proxy-sa
+oc adm policy add-cluster-role-to-user system:auth-delegator -z loki-oauth-proxy-sa
+oc create token loki-oauth-proxy-sa --duration=8760h
+---

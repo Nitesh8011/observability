@@ -1,0 +1,8 @@
+- op: replace
+  path: /spec/serviceMonitorNamespaceSelector/matchExpressions
+  value:
+    - key: kubernetes.io/metadata.name
+      operator: In
+      values:
+        - qam
+        - load-testing

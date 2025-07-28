@@ -1,0 +1,35 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: loki-oauth-proxy-sa
+  annotations:
+    serviceaccounts.openshift.io/oauth-redirectreference.loki: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"loki-secure"}}'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: loki-oauth-access
+rules:
+- apiGroups: [""]
+  resources: ["users"]
+  verbs: ["impersonate"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: loki-oauth-proxy-crb
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: loki-oauth-access
+subjects:
+- kind: ServiceAccount
+  name: loki-oauth-proxy-sa
+---

@@ -1,0 +1,25 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: prometheus-ds
+  labels:
+    grafana_datasource: prometheus
+spec:
+  allowCrossNamespaceImport: false
+  datasource:
+    access: proxy
+    editable: true
+    isDefault: true
+    jsonData:
+      httpHeaderName1: Authorization
+      queryTimeout: 60s
+      timeInterval: 30s
+    name: Prometheus
+    secureJsonData:
+      httpHeaderValue1: Bearer ${PROMETHEUS_TOKEN}
+    type: prometheus
+    url: 'https://prometheus-route.example.com'
+  instanceSelector:
+    matchLabels:
+      grafana: datasource
+  resyncPeriod: 10m0s

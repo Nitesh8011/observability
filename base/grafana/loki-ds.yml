@@ -1,0 +1,23 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: loki-ds
+  labels:
+    grafana_datasource: loki
+spec:
+  allowCrossNamespaceImport: false
+  datasource:
+    access: proxy
+    jsonData:
+      httpHeaderName1: Authorization
+      queryTimeout: 60s
+      timeInterval: 30s
+    name: Loki
+    secureJsonData:
+      httpHeaderValue1: Bearer ${LOKI_TOKEN}
+    type: loki
+    url: 'https://loki-route.example.com'
+  instanceSelector:
+    matchLabels:
+      grafana: datasource
+  resyncPeriod: 10m0s

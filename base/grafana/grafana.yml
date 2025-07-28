@@ -1,0 +1,47 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: Grafana
+metadata:
+  name: grafana
+spec:
+  config:
+    auth:
+      disable_login_form: 'true'
+      disable_signout_menu: 'false'
+      login_maximum_inactive_lifetime_duration: 1h
+      login_maximum_lifetime_duration: 8h
+      oauth_auto_login: 'false'
+    auth.azuread:
+      enabled: 'true'
+      skip_org_role_update_sync: 'false'
+      client_secret: '$__env{AZURE_CLIENT_SECRET}'
+      allow_sign_up: 'true'
+      token_url: 'https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/token'
+      skip_org_role_sync: 'false'
+      api_url: 'https://graph.microsoft.com/oidc/userinfo'
+      allowed_groups: '98222ff2-5695-4f36-a7b5-6a2e570d3bb2,414d3337-d95e-4d35-b90a-685fa10bcd57,d68f3734-d72f-44a2-9af6-ed1ccedffec5'
+      name: Azure AD
+      client_id: '$__env{AZURE_CLIENT_ID}'
+      role_attribute_path: 'contains(groups[*], ''98222ff2-5695-4f36-a7b5-6a2e570d3bb2'') && ''Admin'' || contains(groups[*], ''d68f3734-d72f-44a2-9af6-ed1ccedffec5'') && ''Editor'' || contains(groups[*], ''414d3337-d95e-4d35-b90a-685fa10bcd57'') && ''Viewer'' || ''Viewer'''
+      org_mapping: '98222ff2-5695-4f36-a7b5-6a2e570d3bb2:1:Admin d68f3734-d72f-44a2-9af6-ed1ccedffec5:1:Editor 414d3337-d95e-4d35-b90a-685fa10bcd57:1:Viewer'
+      auth_url: 'https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/authorize'
+      allow_assign_grafana_admin: 'true'
+      scopes: openid email profile
+    basic:
+      enabled: 'false'
+    server:
+      root_url: 'https://grafana.prospecta.com'
+      serve_from_sub_path: 'false'
+    session:
+      session_life_time: '3600'
+  deployment:
+    metadata: {}
+    spec:
+      template:
+        metadata: {}
+        spec:
+          containers:
+            - envFrom:
+                - secretRef:
+                    name: grafana-azure-secrets
+              name: grafana
+  version: 'docker.io/grafana/grafana@sha256:fe89b739a264c78f2111d68221a1d51db67135ec50885dc93b59a981a7a5d4d5'
