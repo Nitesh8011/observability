@@ -18,14 +18,18 @@ The stack consists of the following components:
 
 ```
 ├── base/                           # Base Kubernetes manifests
-│   ├── grafana/                   # Grafana configuration with datasources
 │   ├── jaeger/                    # Jaeger tracing setup with Elasticsearch
 │   ├── logs/                      # Loki and Fluent Bit configurations
 │   ├── oauth-proxy/               # OAuth proxy for secure access
+│   │   ├── jaeger/                # OAuth proxy for Jaeger
+│   │   ├── loki/                  # OAuth proxy for Loki
+│   │   └── prometheus/            # OAuth proxy for Prometheus
 │   ├── opentelemetry/             # OpenTelemetry collector configuration
 │   └── prometheus/                # Prometheus monitoring setup
 ├── overlays/                      # Kustomize overlays for environment-specific configs
 │   ├── grafana/                   # Grafana datasource configurations
+│   ├── logs/                      # Log-related overlay configurations
+│   ├── opentelemetry/             # OpenTelemetry instrumentation configuration
 │   └── prometheus/                # Prometheus configuration patches
 ├── validator.sh                   # Validation script
 └── .gitignore                     # Git ignore rules
@@ -35,8 +39,10 @@ The stack consists of the following components:
 
 - Kubernetes cluster (OpenShift compatible)
 - Helm 3.x
-- kubectl configured to access your cluster
+- kubectl or oc CLI configured to access your cluster
 - S3-compatible storage for Loki (AWS S3, MinIO, etc.)
+- Appropriate storage classes configured (e.g., `gp3-csi` for AWS)
+- For OpenShift: Cluster admin privileges to manage Security Context Constraints (SCCs)
 
 ## Quick Start
 
@@ -55,7 +61,6 @@ The `overlays/kustomization.yaml` includes:
 
 ```bash
 # Deploy base components individually
-kubectl apply -k base/grafana/
 kubectl apply -k base/jaeger/
 kubectl apply -k base/oauth-proxy/
 kubectl apply -k base/opentelemetry/
@@ -66,7 +71,11 @@ kubectl apply -k base/prometheus/
 kubectl apply -k overlays/
 ```
 
-**Note:** The overlays deployment includes Grafana with custom datasource configurations (Loki, Jaeger, Prometheus) and Prometheus patches for optimized settings.
+**Note:** The overlays deployment includes:
+- Grafana with custom datasource configurations (Loki, Jaeger, Prometheus)
+- OpenTelemetry instrumentation configurations
+- Prometheus patches for optimized settings
+- Consistent labeling across all components
 
 **Labeling Strategy:**
 All resources are labeled with consistent Kubernetes-standard labels for better organization and management:
@@ -97,9 +106,12 @@ kubectl create namespace opentelemetry
 kubectl apply -f base/logs/secret.yml -n opentelemetry
 
 # Deploy Loki with custom values
-helm install loki grafana/loki-distributed \
+helm upgrade --install loki grafana/loki-distributed \
   --namespace opentelemetry \
-  --values base/logs/loki-value.yml
+  --values base/logs/loki-values.yml
+
+# For OpenShift, add required security context constraints
+oc adm policy add-scc-to-user anyuid -z loki-loki-distributed
 ```
 
 #### Deploy Fluent Bit
@@ -110,9 +122,12 @@ helm repo add fluent https://fluent.github.io/helm-charts
 helm repo update
 
 # Deploy Fluent Bit with custom values
-helm install fluent-bit fluent/fluent-bit \
+helm upgrade --install fluentbit fluent/fluent-bit \
   --namespace opentelemetry \
-  --values base/logs/fluentbit-value.yml
+  --values overlays/logs/fluentbit-values.yml
+
+# For OpenShift, add required security context constraints
+oc adm policy add-scc-to-user privileged -z fluent-bit
 ```
 
 ## Configuration Details
@@ -137,10 +152,12 @@ Key features:
 The Fluent Bit setup provides:
 - **DaemonSet deployment** for log collection from all nodes
 - **Kubernetes metadata enrichment** with pod, namespace, and container information
-- **Namespace filtering** (focuses on `dev-ops` and `dev` namespaces)
+- **Namespace filtering** (focuses on `qam` and `load-testing` namespaces)
 - **OpenTelemetry trace correlation** with trace_id and span_id extraction
 - **JSON log parsing** for structured logging
 - **Loki output** with proper labeling for efficient querying
+- **Storage configuration** with persistent buffer and checkpoint files
+- **Resource limits** optimized for container environments
 
 ### OpenTelemetry Collector
 
@@ -212,15 +229,18 @@ The repository includes OAuth proxy configurations for secure access to:
 
 ### Environment-Specific Configurations
 
-Use Kustomize overlays to customize configurations for different environments:
+The repository uses Kustomize overlays for environment-specific configurations. The main overlay includes:
+
+- Grafana with pre-configured datasources
+- OpenTelemetry instrumentation settings
+- Prometheus configuration patches
 
 ```bash
-# Development environment
-kubectl apply -k overlays/dev/
-
-# Production environment
-kubectl apply -k overlays/prod/
+# Deploy with overlays (includes all customizations)
+kubectl apply -k overlays/
 ```
+
+For different environments, you can create additional overlay directories following the same pattern.
 
 ### Scaling Considerations
 
