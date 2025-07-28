@@ -4,7 +4,7 @@ kind: ServiceAccount
 metadata:
   name: jaeger-oauth-proxy-sa
   annotations:
-    serviceaccounts.openshift.io/oauth-redirectreference.jaeger: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"jaeger-secure"}}'
+    serviceaccounts.openshift.io/oauth-redirectreference.jaeger: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"jaeger-route"}}'
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

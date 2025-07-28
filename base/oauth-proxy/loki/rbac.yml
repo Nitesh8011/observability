@@ -4,7 +4,7 @@ kind: ServiceAccount
 metadata:
   name: loki-oauth-proxy-sa
   annotations:
-    serviceaccounts.openshift.io/oauth-redirectreference.loki: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"loki-secure"}}'
+    serviceaccounts.openshift.io/oauth-redirectreference.loki: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"loki-route"}}'
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

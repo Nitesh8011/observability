@@ -31,7 +31,7 @@ spec:
             - '--https-address=:8443'
             - '--provider=openshift'
             - '--openshift-service-account=jaeger-oauth-proxy-sa'
-            - '--upstream=http://jaeger-production-query:16686'
+            - '--upstream=http://jaeger-query:16686'
             - '--tls-cert=/etc/tls/private/tls.crt'
             - '--tls-key=/etc/tls/private/tls.key'
             - '--cookie-secret-file=/etc/proxy/secrets/session_secret'
