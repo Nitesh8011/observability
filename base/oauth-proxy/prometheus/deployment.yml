@@ -13,29 +13,30 @@ spec:
       labels:
         app: prometheus-oauth-proxy
     spec:
-      serviceAccountName: prometheus-oauth-proxy
+      serviceAccountName: prometheus-oauth-proxy-sa
       containers:
       - name: oauth-proxy
         image: quay.io/openshift/origin-oauth-proxy:4.12
+        imagePullPolicy: IfNotPresent
+        args:
+          - '--https-address=:8443'
+          - '--provider=openshift'
+          - '--openshift-service-account=prometheus-oauth-proxy'
+          - '--upstream=http://prometheus-operated:9090'
+          - '--tls-cert=/etc/tls/private/tls.crt'
+          - '--tls-key=/etc/tls/private/tls.key'
+          - '--cookie-secret-file=/etc/proxy/secrets/session_secret'
+          - '--openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
+          - '--openshift-sar={"resource":"namespaces","verb":"get"}'
+          - '--skip-auth-regex=^/metrics'
+          - '--skip-auth-regex=^/api/v1/query.*'
+          - '--skip-auth-regex=^/api/v1/query_range.*'
+          - '--skip-auth-regex=^/api/v1/label.*'
+          - '--skip-auth-regex=^/api/v1/series.*'
+          - '--skip-provider-button'
         ports:
         - containerPort: 8443
           name: public
-          args:
-            - '--https-address=:8443'
-            - '--provider=openshift'
-            - '--openshift-service-account=prometheus-oauth-proxy'
-            - '--upstream=http://prometheus-operated:9090'
-            - '--tls-cert=/etc/tls/private/tls.crt'
-            - '--tls-key=/etc/tls/private/tls.key'
-            - '--cookie-secret-file=/etc/proxy/secrets/session_secret'
-            - '--openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
-            - '--openshift-sar={"resource":"namespaces","verb":"get"}'
-            - '--skip-auth-regex=^/metrics'
-            - '--skip-auth-regex=^/api/v1/query.*'
-            - '--skip-auth-regex=^/api/v1/query_range.*'
-            - '--skip-auth-regex=^/api/v1/label.*'
-            - '--skip-auth-regex=^/api/v1/series.*'
-            - '--skip-provider-button'
         volumeMounts:
         - mountPath: /etc/tls/private
           name: secret-prometheus-tls

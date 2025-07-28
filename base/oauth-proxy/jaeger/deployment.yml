@@ -27,10 +27,6 @@ spec:
         - name: oauth-proxy
           image: 'quay.io/openshift/origin-oauth-proxy:4.12'
           imagePullPolicy: IfNotPresent
-          ports:
-            - name: public
-              containerPort: 8443
-              protocol: TCP
           args:
             - '--https-address=:8443'
             - '--provider=openshift'
@@ -43,6 +39,10 @@ spec:
             - '--openshift-ca=/var/run/secrets/kubernetes.io/serviceaccount/ca.crt'
             - '--skip-auth-regex=^/metrics'
             - '--skip-auth-regex=^/api/.*'
+          ports:
+            - name: public
+              containerPort: 8443
+              protocol: TCP
           volumeMounts:
             - name: secret-jaeger-tls
               mountPath: /etc/tls/private
