@@ -35,8 +35,7 @@ spec:
       - key: kubernetes.io/metadata.name
         operator: In
         values:
-          - qam
-          - load-testing
+          - opentelemetry
   scrapeInterval: 30s
   storage:
     volumeClaimTemplate:
