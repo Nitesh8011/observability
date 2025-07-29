@@ -6,7 +6,7 @@ metadata:
     app: opentelemetry-instrumentation
 spec:
   exporter:
-    endpoint: 'http://otel-collector-collector.opentelemetry:4318'
+    endpoint: 'http://otel-collector.opentelemetry:4318'
   java:
     env:
       - name: OTEL_LOGS_EXPORTER
