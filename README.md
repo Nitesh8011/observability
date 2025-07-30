@@ -4,6 +4,57 @@ This repository contains a comprehensive observability stack for Kubernetes envi
 
 ## Architecture Overview
 
+```mermaid
+flowchart LR
+    %% Cluster A – Central Grafana
+    subgraph ClusterA [Cluster A]
+        GrafanaA["Grafana"]
+    end
+
+    %% Cluster B – Monitoring, Collection, Backends
+    subgraph ClusterB [Cluster B]
+        %% Source Layer
+        Apps["Applications / Microservices"]
+        WorkerNode["Worker Node"]
+
+        %% Collection Layer
+        Otel["Otel Collector DaemonSet"]
+        FluentBit["Fluent Bit DaemonSet"]
+
+        %% Monitoring Layer
+        Jaeger["Jaeger"]
+        Prometheus["Prometheus"]
+        Loki["Loki"]
+        OAuth["OAuth Proxy"]
+
+        %% Backends
+        ES["Elasticsearch (Jaeger backend)"]
+        S3Prom["AWS S3 (Prometheus backend)"]
+        S3Loki["AWS S3 (Loki backend)"]
+
+        %% Flows inside Cluster B
+        Apps -->|Traces & Metrics| Otel
+        WorkerNode -->|Syslog & Journald| FluentBit
+
+        Otel -->|Traces| Jaeger
+        Otel -->|Metrics| Prometheus
+        FluentBit -->|Logs| Loki
+
+        Jaeger --> ES
+        Prometheus --> S3Prom
+        Loki --> S3Loki
+
+        OAuth -.-> Jaeger
+        OAuth -.-> Prometheus
+        OAuth -.-> Loki
+    end
+
+    %% Cross-cluster: Grafana queries OAuth Proxy in Cluster B
+    GrafanaA -->|Query Traces| OAuth
+    GrafanaA -->|Query Metrics| OAuth
+    GrafanaA -->|Query Logs| OAuth
+```
+
 The stack consists of the following components:
 
 - **OpenTelemetry Collector**: Collects, processes, and exports telemetry data (metrics, traces, logs)
