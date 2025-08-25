@@ -22,7 +22,7 @@ spec:
       valueFrom:
         secretKeyRef:
           name: jaeger-es-elastic-user
-          key: password
+          key: elastic
   volumeMounts:
     - name: es-certs
       mountPath: /es/certificates

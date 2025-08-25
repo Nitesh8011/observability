@@ -20,5 +20,5 @@ roleRef:
   name: otel-collector-view-cr
 subjects:
   - kind: ServiceAccount
-    name: otel-collector
+    name: metrics-otel-collector
     namespace: opentelemetry
