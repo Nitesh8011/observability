@@ -33,20 +33,24 @@ curl -ku elastic:$PASSWORD -X PUT "https://localhost:9200/_ilm/policy/jaeger-ilm
         }
       },
       "delete": {
-        "min_age": "90d"
+        "min_age": "90d",
+        "actions": {
+          "delete": {}
+        }
       }
     }
   }
 }'
 ---
-curl -ku elastic:$PASSWORD -X PUT "https://localhost:9200/_index_template/jaeger-ilm-template" \
+curl -ku elastic:$PASSWORD -X PUT "https://localhost:9200/_index_template/jaeger-span-ilm-template" \
 -H "Content-Type: application/json" \
 -d '{
-  "index_patterns": ["jaeger-span-*", "jaeger-service-*", "jaeger-dependencies-*"],
+  "index_patterns": ["jaeger-span-*"],
   "template": {
     "settings": {
       "index.lifecycle.name": "jaeger-ilm-policy",
-      "index.lifecycle.rollover_alias": "jaeger-write"
+      "index.number_of_shards": 1,
+      "index.number_of_replicas": 1
     }
   },
   "priority": 200
