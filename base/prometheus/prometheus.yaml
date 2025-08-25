@@ -68,4 +68,4 @@ spec:
   ruleSelector:
     matchLabels:
       prometheus: grafana
-  retention: 2h
+  retention: 6h
