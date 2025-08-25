@@ -9,7 +9,6 @@ serviceAccount:
 rbac:
   create: true
 
-# Run as non-root, allow OpenShift to assign random UID/GID (recommended)
 securityContext:
   runAsUser: 0
   runAsGroup: 0
@@ -31,7 +30,6 @@ resources:
     memory: 128Mi
     cpu: 100m
 
-# Add hostPath volumes for k8s log collection
 extraVolumes:
   - name: varlogcontainers
     hostPath:
@@ -76,7 +74,7 @@ config:
     [INPUT]
         Name               tail
         Tag                kube.*
-        Path               /var/log/containers/*qam*.log,/var/log/containers/*load-testing*.log
+        Path               /var/log/containers/*_dev_*.log
         Parser             cri
         DB                 /var/fluent-bit/storage/flb_kube.db
         Mem_Buf_Limit      5MB
@@ -98,7 +96,7 @@ config:
     [FILTER]
         Name                grep
         Match               kube.*
-        Regex               $kubernetes['namespace_name'] ^(?:qam|load-testing)$
+        Regex               $kubernetes['namespace_name'] ^(?:dev)$
 
     [FILTER]
         Name                parser
@@ -186,9 +184,16 @@ config:
         Port        3100
         URI         /loki/api/v1/push
         Buffer_Size 102400
+
+        # Put these on the label set (visible on expand)
         Labels      namespace=$namespace,pod=$pod,app=$app,trace_id=$trace_id,span_id=$span_id,logger_name=$logger_name,thread_name=$thread_name
         Auto_Kubernetes_Labels Off
-        Drop_Single_Key On
+
+        # Keep only the message as the log body
+        remove_keys namespace,pod,app,trace_id,span_id,logger_name,thread_name
+        line_format json
+        drop_single_key On
+
         Compress    snappy
         Tenant_ID   onprem
 

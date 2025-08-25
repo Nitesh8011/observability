@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
 - ./prometheus.yaml
 - ./servicemonitor.yml
+- ./rbac.yml
 
 labels:
   - pairs:

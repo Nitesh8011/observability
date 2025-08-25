@@ -1,3 +1,18 @@
+## for memcached
+
+helm repo add bitnami https://charts.bitnami.com/bitnami
+
+helm repo update
+
+helm upgrade --install memcached bitnami/memcached \
+  --namespace opentelemetry \
+  --set replicaCount=3 \
+  --set architecture=high-availability \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=1Gi \
+  --set pdb.create=true \
+  --set pdb.minAvailable=2
+
 ## for loki-distributor
 
 helm repo add grafana https://grafana.github.io/helm-charts

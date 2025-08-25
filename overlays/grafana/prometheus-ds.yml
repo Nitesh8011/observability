@@ -8,6 +8,7 @@ spec:
   allowCrossNamespaceImport: false
   datasource:
     access: proxy
+    uid: onprem-prometheus
     editable: true
     isDefault: true
     jsonData:

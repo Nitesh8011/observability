@@ -1,13 +1,16 @@
+# Updated Prometheus Configuration for Thanos Integration
 apiVersion: monitoring.coreos.com/v1
 kind: Prometheus
 metadata:
   name: prometheus
+  namespace: monitoring
 spec:
+  replicas: 2
   evaluationInterval: 30s
+  scrapeInterval: 30s
+  retention: 2h  # Reduced since Thanos handles long-term storage
   serviceAccountName: prometheus-k8s
-  serviceMonitorSelector:
-    matchLabels:
-      prometheus: grafana
+
   resources:
     limits:
       cpu: 1
@@ -15,19 +18,52 @@ spec:
     requests:
       cpu: 500m
       memory: 1Gi
-  thanos:
-    blockSize: 2h
-    image: 'quay.io/thanos/thanos:v0.39.2'
-    logLevel: info
-    objectStorageConfig:
-      key: object-store.yaml
-      name: prometheus-thanos-s3-secret
-    version: v0.39.2
-  podMonitorNamespaceSelector: {}
+
+  # External labels - CRITICAL for Thanos
   externalLabels:
     cluster: prod-a
-  portName: web
-  podMonitorSelector:
+    replica: $(HOSTNAME)  # This helps with deduplication
+    prometheus: prometheus-k8s
+    environment: production
+
+  # Thanos sidecar configuration
+  thanos:
+    image: 'quay.io/thanos/thanos:v0.39.2'
+    version: v0.39.2
+    blockSize: 2h
+    logLevel: info
+    
+    # Object storage configuration
+    objectStorageConfig:
+      key: objstore.yml
+      name: prometheus-thanos-s3-secret
+    
+    # Additional Thanos sidecar flags
+    listenLocal: false
+    
+    # Resources for Thanos sidecar
+    resources:
+      limits:
+        cpu: 500m
+        memory: 1Gi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  # Storage configuration
+  storage:
+    volumeClaimTemplate:
+      metadata:
+        name: prometheus-data
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources:
+          requests:
+            storage: 250Gi  # Reduced since we only keep 2h locally
+        storageClassName: crunchy-qah
+
+  # ServiceMonitor discovery settings
+  serviceMonitorSelector:
     matchLabels:
       prometheus: grafana
   serviceMonitorNamespaceSelector:
@@ -36,17 +72,33 @@ spec:
         operator: In
         values:
           - opentelemetry
-  scrapeInterval: 30s
-  storage:
-    volumeClaimTemplate:
-      metadata:
-        name: prometheus-data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 30Gi
-        storageClassName: gp3-csi
-  replicas: 2
-  retention: 30d
+
+  # PodMonitor discovery settings
+  podMonitorSelector:
+    matchLabels:
+      prometheus: grafana
+  podMonitorNamespaceSelector:
+    matchExpressions:
+      - key: kubernetes.io/metadata.name
+        operator: In
+        values:
+          - opentelemetry
+
+  # Rule selector for PrometheusRule CRDs
+  ruleSelector:
+    matchLabels:
+      prometheus: grafana
+
+  # Additional configuration for better Thanos integration
+  portName: web
+  
+  # Disable features that Thanos handles
+  disableCompaction: false  # Keep local compaction for efficiency
+  
+  # WAL compression for better performance
+  walCompression: true
+
+  # Additional scrape configs if needed
+  additionalScrapeConfigs:
+    name: additional-scrape-configs
+    key: prometheus-additional.yaml

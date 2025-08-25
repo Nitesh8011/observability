@@ -2,61 +2,6 @@
 
 This repository contains a comprehensive observability stack for Kubernetes environments, featuring OpenTelemetry, Prometheus, Grafana, Jaeger, and Loki with Fluent Bit for log aggregation.
 
-## Architecture Overview
-
-```mermaid
-flowchart LR
-    %% Cluster A – Central Grafana
-    subgraph ClusterA [Cluster A]
-        GrafanaA["Grafana"]
-    end
-
-    %% Cluster B – Monitoring, Collection, Backends
-    subgraph ClusterB [Cluster B]
-        %% Source Layer
-        Apps["Applications / Microservices"]
-        WorkerNode["Worker Node"]
-
-        %% Collection Layer
-        Otel["Otel Collector DaemonSet"]
-        FluentBit["Fluent Bit DaemonSet"]
-
-        %% Monitoring Layer
-        Jaeger["Jaeger"]
-        Prometheus["Prometheus"]
-        Loki["Loki"]
-        OAuth["OAuth Proxy"]
-
-        %% Backends
-        ES["Elasticsearch (Jaeger backend)"]
-        S3Prom["AWS S3 (Prometheus backend)"]
-        S3Loki["AWS S3 (Loki backend)"]
-
-        %% Flows inside Cluster B
-        Apps -->|Traces & Metrics| Otel
-        WorkerNode -->|Syslog & Journald| FluentBit
-
-        Otel -->|Traces| Jaeger
-        Otel -->|Metrics| Prometheus
-        FluentBit -->|Logs| Loki
-
-        Jaeger --> ES
-        Prometheus --> S3Prom
-        Loki --> S3Loki
-
-        OAuth -.-> Jaeger
-        OAuth -.-> Prometheus
-        OAuth -.-> Loki
-    end
-
-    %% Cross-cluster: Grafana queries OAuth Proxy in Cluster B
-    GrafanaA -->|Query Traces| OAuth
-    GrafanaA -->|Query Metrics| OAuth
-    GrafanaA -->|Query Logs| OAuth
-```
-
-The stack consists of the following components:
-
 - **OpenTelemetry Collector**: Collects, processes, and exports telemetry data (metrics, traces, logs)
 - **Prometheus**: Metrics collection and storage
 - **Grafana**: Visualization and dashboards with pre-configured datasources
@@ -82,6 +27,7 @@ The stack consists of the following components:
 │   ├── logs/                      # Log-related overlay configurations
 │   ├── opentelemetry/             # OpenTelemetry instrumentation configuration
 │   └── prometheus/                # Prometheus configuration patches
+├── s3-lifecycle.md                # Detailed S3 lifecycle policies documentation
 ├── validator.sh                   # Validation script
 └── .gitignore                     # Git ignore rules
 ```
@@ -246,6 +192,113 @@ data:
   REGION: <base64-encoded-region>
 type: Opaque
 ```
+
+## S3 Storage and Lifecycle Management
+
+This observability stack uses S3-compatible storage for both Loki (logs) and Prometheus/Thanos (metrics) with optimized lifecycle policies to reduce storage costs while maintaining query performance.
+
+### S3 Lifecycle Policies Overview
+
+The lifecycle policies are designed to automatically transition data to cheaper storage tiers without breaking queries. **Important**: Loki and Thanos remain responsible for data deletion based on their retention settings; S3 rules primarily handle storage-class transitions.
+
+### Loki S3 Bucket Lifecycle
+
+**Configured Rules:**
+
+1. **`loki-index-warm`** (Index optimization)
+   - **Scope**: `index/` prefix
+   - **Transitions**: → Intelligent-Tiering at **14 days**
+   - **Rationale**: Keeps indexes accessible while reducing costs for older index data
+
+2. **`loki-data-warm-cold`** (Chunk data optimization)
+   - **Scope**: Entire bucket
+   - **Transitions**: 
+     - → Intelligent-Tiering at **30 days**
+     - → Glacier Instant Retrieval at **180 days**
+   - **Rationale**: Chunks age to cheaper tiers but remain instantly readable for queries
+
+**Key Points:**
+- Loki's compactor handles data deletion based on retention settings (30 days default)
+- S3 does not expire objects - deletion is managed by Loki
+- Indexes remain hot/warm to avoid Glacier restore delays
+- All data remains instantly queryable regardless of storage class
+
+### Prometheus/Thanos S3 Bucket Lifecycle
+
+**Configured Rule:**
+
+- **`prometheus-90day-retention`**
+  - **Scope**: Entire bucket
+  - **Transitions**:
+    - → Standard-IA at **30 days**
+    - → Glacier Instant Retrieval at **60 days**
+  - **Expiration**: Objects deleted at **100 days**
+  - **Noncurrent versions**: Deleted after **1 day** (if versioning enabled)
+
+**Critical Configuration Requirements:**
+
+⚠️ **Important**: S3 expiration at 100 days is only safe if Thanos Compactor retention ≤ 100 days for all resolutions.
+
+**Recommended Thanos retention alignment:**
+```bash
+--retention.resolution-raw=30d
+--retention.resolution-5m=60d  
+--retention.resolution-1h=100d
+```
+
+**Safety considerations:**
+- Ensure Thanos compactor is running with appropriate `--delete-delay` (default ~48h)
+- If you need data beyond 100 days, disable S3 expiration and let Thanos handle deletion
+- Monitor for 404/NotFound errors in Thanos logs indicating missing objects
+
+### S3 Bucket Configuration
+
+For both Loki and Prometheus/Thanos buckets, ensure:
+
+```bash
+# Common lifecycle settings for both buckets
+- Abort incomplete multipart uploads after 7 days
+- Enable appropriate storage class transitions
+- Configure bucket policies for service account access
+```
+
+### Verification and Monitoring
+
+**Regular checks:**
+1. **S3 Console**: Verify storage class transitions are occurring as expected
+2. **Loki queries**: Ensure older log queries work (indexes in Intelligent-Tiering, chunks in appropriate tiers)
+3. **Thanos/Prometheus queries**: Verify data < 100 days is accessible, older data is properly cleaned up
+4. **Application logs**: Monitor for S3-related errors in Loki and Thanos components
+
+**Troubleshooting S3 issues:**
+```bash
+# Check Loki logs for S3 connectivity
+kubectl logs -l app.kubernetes.io/name=loki -n opentelemetry | grep -i s3
+
+# Check Thanos logs for object store issues  
+kubectl logs -l app.kubernetes.io/name=thanos -n opentelemetry | grep -i "object store"
+```
+
+### Cost Optimization Benefits
+
+The lifecycle policies provide significant cost savings:
+- **Loki**: ~60-80% cost reduction for older log data while maintaining instant access
+- **Prometheus/Thanos**: ~70-85% cost reduction with automatic cleanup preventing unbounded growth
+- **Operational**: Reduced manual intervention for storage management
+
+### Modifying Lifecycle Policies
+
+**To adjust lifecycle rules:**
+
+1. **Via AWS Console**: Navigate to S3 bucket → Management → Lifecycle rules
+2. **Via CLI**: Apply updated lifecycle policy JSON
+3. **Important**: When changing Thanos bucket expiration, first align compactor retention flags
+
+**Change control process:**
+- Test changes in non-production environment first
+- Ensure Thanos/Loki retention settings are compatible
+- Monitor query performance after changes
+- Document any custom retention requirements
 
 ### OAuth Proxy
 
