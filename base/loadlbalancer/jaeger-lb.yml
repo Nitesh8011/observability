@@ -9,11 +9,12 @@ metadata:
 spec:
   type: LoadBalancer
   ports:
-    - name: http
+    - name: jaeger-query
       protocol: TCP
-      port: 80
-      targetPort: http
+      port: 16686
+      targetPort: 16686
   selector:
-    app.kubernetes.io/component: gateway
-    app.kubernetes.io/instance: loki
-    app.kubernetes.io/name: loki-distributed
+    app.kubernetes.io/component: opentelemetry-collector
+    app.kubernetes.io/instance: opentelemetry.jaeger-otel
+    app.kubernetes.io/managed-by: opentelemetry-operator
+    app.kubernetes.io/part-of: opentelemetry
