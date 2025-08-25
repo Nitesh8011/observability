@@ -62,7 +62,7 @@ spec:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 250Gi
+            storage: 30Gi
         storageClassName: gp3-csi
   replicas: 2
   ruleSelector:

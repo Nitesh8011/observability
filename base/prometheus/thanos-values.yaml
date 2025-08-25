@@ -81,8 +81,8 @@ storegateway:
   
   persistence:
     enabled: true
-    storageClass: "crunchy-dev"
-    size: 149Gi
+    storageClass: gp3-csi
+    size: 20Gi
   
   # Configure both index cache and bucket cache using multi-line extraFlags
   extraFlags:
@@ -152,8 +152,8 @@ compactor:
   
   persistence:
     enabled: true
-    storageClass: "crunchy-dev" 
-    size: 149Gi
+    storageClass: gp3-csi
+    size: 20Gi
 
   args:
     - compact

@@ -160,8 +160,8 @@ ingester:
     inMemory: false
     claims:
       - name: data
-        size: 299Gi
-        storageClass: crunchy-dev
+        size: 20Gi
+        storageClass: gp3-csi
         accessModes:
           - ReadWriteOnce
 
@@ -224,8 +224,8 @@ compactor:
     inMemory: false
     claims:
       - name: data
-        size: 50Gi
-        storageClass: es68x-qam
+        size: 20Gi
+        storageClass: gp3-csi
         accessModes:
           - ReadWriteOnce
 
