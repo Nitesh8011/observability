@@ -3,6 +3,7 @@ kind: Kustomization
 resources:
 - ../base/jaeger
 - ../base/oauth-proxy
+- ../base/opentelemetry
 - ../base/prometheus
 - grafana
 - opentelemetry
@@ -10,13 +11,3 @@ resources:
 labels:
   - pairs:
       app.kubernetes.io/part-of: observability-stack
-
-patches:
-- path: opentelemetry/lt-patch.yaml
-  target:
-    kind: Instrumentation
-    name: instrumentation
-- path: opentelemetry/qam-patch.yaml
-  target:
-    kind: Instrumentation
-    name: instrumentation
