@@ -1,11 +1,9 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-resources:
-- instrumentation.yml
 
 labels:
   - pairs:
-      app.kubernetes.io/name: opentelemetry-instrumentation
+      app.kubernetes.io/name: opentelemetry
       app.kubernetes.io/component: instrumentation
 
 patches:
@@ -15,4 +13,4 @@ patches:
     patch: |-
       - op: add
         path: /metadata/namespace
-        value: qam
+        value: dev
