@@ -75,7 +75,7 @@ spec:
       pipelines:
         traces:
           receivers: [otlp,jaeger]
-          processors: [batch]
+          processors: [memory_limiter,batch]
           exporters: [jaeger_storage_exporter]
       telemetry:
         logs:
