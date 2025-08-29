@@ -10,26 +10,135 @@ This repository contains a comprehensive observability stack for Kubernetes envi
 - **Fluent Bit**: Log collection and forwarding to Loki
 - **OAuth Proxy**: Authentication layer for secure access to observability tools
 
+## Architecture Overview
+
+This repository implements a **hub-and-spoke architecture** for distributed observability:
+
+- **Hub**: Central observability infrastructure that aggregates, stores, and visualizes telemetry data
+- **Spoke**: Distributed collection agents deployed across environments that forward data to the hub
+
 ## Directory Structure
 
 ```
-├── base/                           # Base Kubernetes manifests
-│   ├── jaeger/                    # Jaeger tracing setup with Elasticsearch
-│   ├── logs/                      # Loki and Fluent Bit configurations
-│   ├── oauth-proxy/               # OAuth proxy for secure access
-│   │   ├── jaeger/                # OAuth proxy for Jaeger
-│   │   ├── loki/                  # OAuth proxy for Loki
-│   │   └── prometheus/            # OAuth proxy for Prometheus
-│   ├── opentelemetry/             # OpenTelemetry collector configuration
-│   └── prometheus/                # Prometheus monitoring setup
-├── overlays/                      # Kustomize overlays for environment-specific configs
-│   ├── grafana/                   # Grafana datasource configurations
-│   ├── logs/                      # Log-related overlay configurations
-│   ├── opentelemetry/             # OpenTelemetry instrumentation configuration
-│   └── prometheus/                # Prometheus configuration patches
-├── s3-lifecycle.md                # Detailed S3 lifecycle policies documentation
+├── hub/                           # Hub: Central observability infrastructure
+│   ├── kustomization.yaml         # Hub aggregation configuration
+│   ├── loadlbalancer/             # Load balancers for hub services
+│   │   ├── jaeger-lb.yml          # Jaeger load balancer
+│   │   ├── loki-lb.yml            # Loki load balancer
+│   │   ├── prometheus-lb.yml      # Prometheus load balancer
+│   │   └── kustomization.yaml     # Load balancer aggregation
+│   ├── logs/                      # Centralized log storage (Loki)
+│   │   ├── loki-values.yml        # Loki Helm values
+│   │   ├── secret.yml             # S3 credentials for Loki
+│   │   ├── policy.json            # S3 bucket policy
+│   │   └── command.txt            # Deployment commands
+│   ├── metrics/                   # Centralized metrics storage (Thanos)
+│   │   ├── thanos-values.yaml     # Thanos Helm values
+│   │   ├── objstore.yaml          # Object storage configuration
+│   │   ├── policy.json            # S3 bucket policy
+│   │   └── commands.txt           # Deployment commands
+│   ├── traces/                    # Centralized trace storage (Jaeger)
+│   │   ├── jaeger-hub.yml         # Jaeger hub configuration
+│   │   ├── elasticsearch.yml      # Elasticsearch backend
+│   │   ├── ilm.txt                # Index lifecycle management
+│   │   └── kustomization.yaml     # Tracing aggregation
+│   └── visual/                    # Visualization and dashboards
+│       ├── grafana.yml            # Grafana configuration
+│       ├── jaeger-ds.yml          # Jaeger datasource
+│       ├── loki-ds.yml            # Loki datasource
+│       ├── prometheus-ds.yml      # Prometheus datasource
+│       └── kustomization.yaml     # Visualization aggregation
+├── spoke/                         # Spoke: Distributed collection agents
+│   ├── kustomization.yaml         # Spoke aggregation configuration
+│   ├── logs/                      # Log collection (Fluent Bit)
+│   │   ├── fluentbit.yml          # Fluent Bit DaemonSet
+│   │   ├── commands.txt           # Deployment commands
+│   │   └── kustomization.yaml     # Log collection aggregation
+│   ├── metrics/                   # Metrics collection (Prometheus)
+│   │   ├── prometheus.yaml        # Prometheus configuration
+│   │   ├── servicemonitor.yml     # Service monitoring rules
+│   │   ├── objstore.yaml          # Object storage for remote write
+│   │   └── kustomization.yaml     # Metrics collection aggregation
+│   └── opentelemetry/             # OpenTelemetry collection
+│       ├── collector.yml          # OpenTelemetry Collector DaemonSet
+│       ├── instrumentation.yml    # Auto-instrumentation configuration
+│       └── kustomization.yaml     # OpenTelemetry aggregation
 ├── validator.sh                   # Validation script
 └── .gitignore                     # Git ignore rules
+```
+
+## Container Images
+
+This observability stack uses several container images from different registries. Here's a comprehensive list of the images used:
+
+### Hub Components
+
+| Component | Image | Registry | Current Version |
+|-----------|-------|----------|-----------------|
+| **Grafana** | `docker.io/grafana/grafana` | Docker Hub | `@sha256:fe89b739a264c78f2111d68221a1d51db67135ec50885dc93b59a981a7a5d4d5` |
+| **Jaeger Hub** | `cr.jaegertracing.io/jaegertracing/jaeger` | Jaeger Registry | `2.9.0` |
+| **Loki** | `docker.io/grafana/loki` | Docker Hub | Via Helm Chart |
+| **Thanos (Hub)** | `quay.io/thanos/thanos` | Quay.io | Via Helm Chart |
+
+### Spoke Components
+
+| Component | Image | Registry | Current Version |
+|-----------|-------|----------|-----------------|
+| **OpenTelemetry Collector** | `otel/opentelemetry-collector-contrib` | Docker Hub | `0.133.0` |
+| **Fluent Bit** | `cr.fluentbit.io/fluent/fluent-bit` | Fluent Bit Registry | Via Helm Chart |
+| **Prometheus** | `quay.io/prometheus/prometheus` | Quay.io | Via Operator |
+| **Thanos Sidecar** | `quay.io/thanos/thanos` | Quay.io | `v0.39.2` |
+
+### Image Update Strategy
+
+#### Checking for Latest Images
+
+**1. OpenTelemetry Collector:**
+- **Registry**: [Docker Hub - OpenTelemetry Collector Contrib](https://hub.docker.com/r/otel/opentelemetry-collector-contrib/tags)
+- **GitHub Releases**: [OpenTelemetry Collector Releases](https://github.com/open-telemetry/opentelemetry-collector-contrib/releases)
+- **Update Location**: `spoke/opentelemetry/collector.yml` - Update the `image` field
+
+**2. Jaeger:**
+- **Registry**: [Jaeger Container Registry](https://www.jaegertracing.io/docs/1.60/deployment/#container-images)
+- **GitHub Releases**: [Jaeger Releases](https://github.com/jaegertracing/jaeger/releases)
+- **Update Location**: `hub/traces/jaeger-hub.yml` - Update the `image` field
+
+**3. Grafana:**
+- **Registry**: [Docker Hub - Grafana](https://hub.docker.com/r/grafana/grafana/tags)
+- **GitHub Releases**: [Grafana Releases](https://github.com/grafana/grafana/releases)
+- **Update Location**: `hub/visual/grafana.yml` - Update the `version` field
+
+**4. Thanos:**
+- **Registry**: [Quay.io - Thanos](https://quay.io/repository/thanos/thanos?tab=tags)
+- **GitHub Releases**: [Thanos Releases](https://github.com/thanos-io/thanos/releases)
+- **Update Locations**: 
+  - `spoke/metrics/prometheus.yaml` - Update the `thanos.image` and `thanos.version` fields
+  - `hub/metrics/thanos-values.yaml` - Update Helm values
+
+**5. Helm Chart Managed Images:**
+- **Loki**: Check [Grafana Helm Charts](https://github.com/grafana/helm-charts/tree/main/charts/loki-distributed)
+- **Fluent Bit**: Check [Fluent Bit Helm Charts](https://github.com/fluent/helm-charts/tree/main/charts/fluent-bit)
+
+**For Helm Chart Managed Images:**
+
+```bash
+# Update Loki
+helm repo update
+helm upgrade loki grafana/loki-distributed \
+  --namespace opentelemetry \
+  --values hub/logs/loki-values.yml
+
+# Update Fluent Bit  
+helm repo update
+helm upgrade fluentbit fluent/fluent-bit \
+  --namespace opentelemetry \
+  --values spoke/logs/fluentbit.yml
+
+# Update Thanos (if using Helm)
+helm repo update
+helm upgrade thanos bitnami/thanos \
+  --namespace opentelemetry \
+  --values hub/metrics/thanos-values.yaml
 ```
 
 ## Prerequisites
@@ -43,36 +152,51 @@ This repository contains a comprehensive observability stack for Kubernetes envi
 
 ## Quick Start
 
-### 1. Deploy with Kustomize
+### 1. Deploy Hub Infrastructure
 
-The repository uses Kustomize for deployment with the following structure:
-
-**Overlays Configuration:**
-The `overlays/kustomization.yaml` includes:
-- Jaeger tracing
-- OAuth Proxy for secure access
-- OpenTelemetry collector
-- Prometheus monitoring
-- Grafana with custom datasource configurations
-- Prometheus patches for environment-specific settings
+Deploy the central observability hub that provides storage, visualization, and load balancing:
 
 ```bash
-# Deploy base components individually
-kubectl apply -k base/jaeger/
-kubectl apply -k base/oauth-proxy/
-kubectl apply -k base/opentelemetry/
-kubectl apply -k base/prometheus/
+# Deploy the complete hub infrastructure
+kubectl apply -k hub/
 
-# Or deploy the complete stack with overlays (recommended)
-# This includes all components with environment-specific patches
-kubectl apply -k overlays/
+# Or deploy hub components individually
+kubectl apply -k hub/loadlbalancer/    # Load balancers for hub services
+kubectl apply -k hub/traces/           # Jaeger tracing with Elasticsearch
+kubectl apply -k hub/visual/           # Grafana with datasources
 ```
 
-**Note:** The overlays deployment includes:
-- Grafana with custom datasource configurations (Loki, Jaeger, Prometheus)
-- OpenTelemetry instrumentation configurations
-- Prometheus patches for optimized settings
-- Consistent labeling across all components
+### 2. Deploy Spoke Collection Agents
+
+Deploy the distributed collection agents that forward telemetry data to the hub:
+
+```bash
+# Deploy all spoke components
+kubectl apply -k spoke/
+
+# Or deploy spoke components individually
+kubectl apply -k spoke/opentelemetry/  # OpenTelemetry collectors
+kubectl apply -k spoke/logs/           # Fluent Bit log collection
+kubectl apply -k spoke/metrics/        # Prometheus metrics collection
+```
+
+### 3. Hub-and-Spoke Deployment Pattern
+
+The architecture supports flexible deployment patterns:
+
+**Centralized Hub Deployment:**
+- Deploy hub components in a central cluster or namespace
+- Hub provides shared storage backends (Loki, Jaeger, Thanos)
+- Hub includes visualization layer (Grafana) and load balancers
+
+**Distributed Spoke Deployment:**
+- Deploy spoke components across multiple environments/clusters
+- Spokes collect and forward telemetry data to the central hub
+- Each spoke can be configured independently for different environments
+
+**Hybrid Deployment:**
+- Hub and spoke components can be deployed in the same cluster for single-cluster observability
+- Or distributed across multiple clusters for multi-cluster observability
 
 **Labeling Strategy:**
 All resources are labeled with consistent Kubernetes-standard labels for better organization and management:
@@ -85,11 +209,11 @@ All resources are labeled with consistent Kubernetes-standard labels for better 
   - Grafana: `app.kubernetes.io/name: grafana`, `app.kubernetes.io/component: visualization`
   - OAuth Proxy: `app.kubernetes.io/name: oauth-proxy-{service}`, `app.kubernetes.io/component: security`
 
-### 2. Deploy Logging Stack with Helm
+### 4. Deploy Hub Storage Components with Helm
 
-The logging components (Loki and Fluent Bit) can be deployed using Helm charts with the provided values files.
+Some hub components require Helm deployment for advanced configurations:
 
-#### Deploy Loki
+#### Deploy Loki (Hub Log Storage)
 
 ```bash
 # Add Grafana Helm repository
@@ -100,31 +224,31 @@ helm repo update
 kubectl create namespace opentelemetry
 
 # Configure S3 credentials (update the secret with your values)
-kubectl apply -f base/logs/secret.yml -n opentelemetry
+kubectl apply -f hub/logs/secret.yml -n opentelemetry
 
 # Deploy Loki with custom values
 helm upgrade --install loki grafana/loki-distributed \
   --namespace opentelemetry \
-  --values base/logs/loki-values.yml
+  --values hub/logs/loki-values.yml
 
 # For OpenShift, add required security context constraints
 oc adm policy add-scc-to-user anyuid -z loki-loki-distributed
 ```
 
-#### Deploy Fluent Bit
+#### Deploy Thanos (Hub Metrics Storage)
 
 ```bash
-# Add Fluent Bit Helm repository
-helm repo add fluent https://fluent.github.io/helm-charts
+# Add Bitnami Helm repository
+helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
-# Deploy Fluent Bit with custom values
-helm upgrade --install fluentbit fluent/fluent-bit \
-  --namespace opentelemetry \
-  --values overlays/logs/fluentbit-values.yml
+# Configure object storage credentials
+kubectl apply -f hub/metrics/objstore.yaml -n opentelemetry
 
-# For OpenShift, add required security context constraints
-oc adm policy add-scc-to-user privileged -z fluent-bit
+# Deploy Thanos with custom values
+helm upgrade --install thanos bitnami/thanos \
+  --namespace opentelemetry \
+  --values hub/metrics/thanos-values.yaml
 ```
 
 ## Configuration Details
@@ -177,7 +301,7 @@ Pre-configured datasources for:
 
 ### S3 Credentials
 
-Before deploying Loki, update the S3 credentials in `base/logs/secret.yml`:
+Before deploying Loki, update the S3 credentials in `hub/logs/secret.yml`:
 
 ```yaml
 apiVersion: v1
@@ -333,18 +457,25 @@ The repository includes OAuth proxy configurations for secure access to:
 
 ### Environment-Specific Configurations
 
-The repository uses Kustomize overlays for environment-specific configurations. The main overlay includes:
+The repository uses Kustomize for environment-specific configurations with the hub-and-spoke pattern:
 
-- Grafana with pre-configured datasources
-- OpenTelemetry instrumentation settings
-- Prometheus configuration patches
+**Hub Configuration:**
+- Centralized storage backends (Loki, Jaeger, Thanos)
+- Visualization layer (Grafana with pre-configured datasources)
+- Load balancers for external access
+
+**Spoke Configuration:**
+- Collection agents (OpenTelemetry, Fluent Bit, Prometheus)
+- Environment-specific instrumentation settings
+- Remote write/forward configurations to hub
 
 ```bash
-# Deploy with overlays (includes all customizations)
-kubectl apply -k overlays/
+# Deploy hub and spoke components
+kubectl apply -k hub/    # Central infrastructure
+kubectl apply -k spoke/  # Collection agents
 ```
 
-For different environments, you can create additional overlay directories following the same pattern.
+For different environments, you can customize the spoke configurations while maintaining a shared hub infrastructure.
 
 ### Scaling Considerations
 
