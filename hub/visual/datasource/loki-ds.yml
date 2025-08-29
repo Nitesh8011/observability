@@ -1,0 +1,22 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: onprem-loki-ds
+  labels:
+    grafana_datasource: loki
+spec:
+  allowCrossNamespaceImport: false
+  datasource:
+    access: proxy
+    jsonData:
+      httpHeaderName1: Authorization
+    name: onprem-loki
+    secureJsonData:
+      httpHeaderValue1: Bearer ${LOKI_TOKEN}
+    type: loki
+    uid: onprem-loki
+    url: 'https://loki-route-opentelemetry.apps.ocp.virt.prospecta.com.au'
+  instanceSelector:
+    matchLabels:
+      grafana: datasource
+  resyncPeriod: 10m0s
