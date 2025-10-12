@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Federated": "arn:aws:iam::597088041925:oidc-provider/oidc.op1.openshiftapps.com/2dhm6vgbuc1khbkqbf166a7ci2aenbdd"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringEquals": {
+                    "oidc.op1.openshiftapps.com/2dhm6vgbuc1khbkqbf166a7ci2aenbdd:sub": "system:serviceaccount:opentelemetry:grafana-sa"
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,23 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDatasource
+metadata:
+  name: cloudwatch-metrics-ds
+  labels:
+    app: grafana
+spec:
+  allowCrossNamespaceImport: false
+  datasource:
+    name: CloudWatch
+    type: cloudwatch
+    uid: cloudwatch-cw
+    access: proxy
+    isDefault: false
+    jsonData:
+      authType: default
+      defaultRegion: ap-southeast-2
+      customMetricsNamespaces: AWS/RDS
+      logsTimeout: 30s
+    editable: true
+  instanceSelector:
+    matchLabels:
+      grafana: datasource
