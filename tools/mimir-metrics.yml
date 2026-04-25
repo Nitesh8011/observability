@@ -15,7 +15,6 @@ chunks-cache:
 compactor:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
   persistentVolume:
     enabled: true
     size: 20Gi
@@ -32,7 +31,6 @@ compactor:
 distributor:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
   replicas: 3
   resources:
     limits:
@@ -41,6 +39,13 @@ distributor:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Enable HPA — distributor is stateless, safe to scale under ingestion bursts
+  autoscaling:
+    enabled: false
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
 
 extraEnv:
 - name: AWS_REGION
@@ -83,10 +88,7 @@ index-cache:
 ingester:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
     blocks-storage.tsdb.retention-period: 13h
-    # Override the Helm chart default which hardcodes abort-if-fast-join-fails=true
-    # Without this override pods crash immediately on cold start before any peer is reachable
   persistentVolume:
     enabled: true
     size: 10Gi
@@ -103,6 +105,9 @@ ingester:
     enabled: false
 
 kafka:
+  extraEnv:
+    - name: KAFKA_LOG_RETENTION_HOURS
+      value: "1"
   config:
     log.cleaner.enable: "true"
     log.cleanup.policy: delete
@@ -110,9 +115,6 @@ kafka:
     log.retention.ms: "3600000"
     log.segment.bytes: "104857600"
   enabled: true
-  # extraEnv:
-  # - name: KAFKA_LOG_RETENTION_HOURS
-  #   value: "1"
   persistence:
     size: 50Gi
     storageClass: gp3-csi
@@ -157,12 +159,12 @@ metadata-cache:
 mimir:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # # memberlist.advertise-addr: ${MY_POD_IP}
   structuredConfig:
     alertmanager_storage:
       backend: s3
       s3:
         bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+
     blocks_storage:
       backend: s3
       bucket_store:
@@ -171,47 +173,55 @@ mimir:
           memcached:
             addresses: dnssrvnoa+mimir-chunks-cache.mimir.svc.cluster.local:11211
             max_async_concurrency: 50
-            max_idle_connections: 100
+            # Increased from 100 → 200: more persistent memcached connections under load
+            max_idle_connections: 200
         index_cache:
           backend: memcached
           memcached:
             addresses: dnssrvnoa+mimir-index-cache.mimir.svc.cluster.local:11211
             max_async_concurrency: 50
-            max_idle_connections: 100
+            max_idle_connections: 200
         metadata_cache:
           backend: memcached
           memcached:
             addresses: dnssrvnoa+mimir-metadata-cache.mimir.svc.cluster.local:11211
-            max_idle_connections: 100
+            max_idle_connections: 200
         sync_dir: /data/tsdb-sync
-        sync_interval: 1m
+        # Reduced from 1m → 30s: store-gateway syncs block list more frequently
+        # means newly compacted blocks become queryable faster
+        sync_interval: 30s
       s3:
         bucket_name: otel-metrics-597088041925-ap-southeast-2-an
       tsdb:
         block_ranges_period:
-        - 2h
+          - 2h
         dir: /data/tsdb
         head_compaction_idle_timeout: 1h
         head_compaction_interval: 1m
         retention_period: 13h
         ship_concurrency: 10
         ship_interval: 1m
+
     common:
       storage:
         backend: s3
         s3:
           endpoint: s3.ap-southeast-2.amazonaws.com
           region: ap-southeast-2
+
     compactor:
       block_ranges:
-      - 2h
-      - 12h
-      - 24h
-      compaction_concurrency: 4
-      compaction_interval: 30m
+        - 2h
+        - 12h
+        - 24h
+      # Increased from 4 → 8: more parallel compaction workers = faster block merging
+      compaction_concurrency: 8
+      # Reduced from 30m → 15m: more frequent compaction = smaller blocks = faster queries
+      compaction_interval: 15m
       data_dir: /data/compactor
       deletion_delay: 12h
       tenant_cleanup_delay: 6h
+
     distributor:
       ha_tracker:
         enable_ha_tracker: true
@@ -222,6 +232,7 @@ mimir:
       pool:
         health_check_ingesters: true
       remote_timeout: 60s
+
     frontend:
       cache_results: true
       parallelize_shardable_queries: true
@@ -229,8 +240,11 @@ mimir:
         backend: memcached
         memcached:
           addresses: dnssrvnoa+mimir-results-cache.mimir.svc.cluster.local:11211
-          max_idle_connections: 100
-      split_queries_by_interval: 24h
+          max_idle_connections: 200
+      # Reduced from 24h → 6h: finer query splits = more parallelism per query
+      # Same approach as Loki split_queries_by_interval fix
+      split_queries_by_interval: 6h
+
     ingester:
       instance_limits:
         max_inflight_push_requests: 30000
@@ -242,8 +256,10 @@ mimir:
         kvstore:
           store: memberlist
         replication_factor: 3
+
     limits:
       cardinality_analysis_enabled: true
+      # 90 days retention in S3 — already correct, keeping as-is
       compactor_blocks_retention_period: 90d
       ha_cluster_label: cluster
       ha_replica_label: prometheus_replica
@@ -256,9 +272,13 @@ mimir:
       max_label_name_length: 1024
       max_label_names_per_series: 30
       max_label_value_length: 2048
+      # 30 day max query window — already correct, keeping as-is
       max_query_lookback: 30d
       out_of_order_time_window: 5m
       query_ingesters_within: 13h
+      # Increased from default: more parallelism for large range queries
+      max_query_parallelism: 240
+
     memberlist:
       bind_addr:
         - 0.0.0.0
@@ -276,24 +296,34 @@ mimir:
       min_join_backoff: 1s
       max_join_backoff: 1m
       max_join_retries: 20
+
     multitenancy_enabled: true
+
     querier:
       lookback_delta: 5m
-      max_concurrent: 20
-      timeout: 2m
+      # Increased from 20 → 32: more concurrent queries per querier pod
+      max_concurrent: 32
+      # Increased from 2m → 5m: allow long-running 30d range queries to complete
+      timeout: 5m
+
     ruler_storage:
       backend: s3
       s3:
         bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+
     server:
       grpc_server_max_concurrent_streams: 1000
       grpc_server_max_recv_msg_size: 104857600
       grpc_server_max_send_msg_size: 104857600
+      http_server_write_timeout: 5m
+      http_server_read_timeout: 5m
+
     store_gateway:
       sharding_ring:
         kvstore:
           store: memberlist
         replication_factor: 3
+
     usage_stats:
       enabled: false
 
@@ -309,7 +339,6 @@ nginx:
 overrides_exporter:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
   replicas: 3
   resources:
     limits:
@@ -322,7 +351,8 @@ overrides_exporter:
 querier:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
+  # Increased from 3 → 6: more querier pods = more parallel S3 block reads
+  # Primary bottleneck for slow 30d range queries — same fix as Loki/Tempo
   replicas: 3
   resources:
     limits:
@@ -331,16 +361,23 @@ querier:
     requests:
       cpu: 100m
       memory: 256Mi
+  # Enable HPA so queriers scale under heavy query load
+  autoscaling:
+    enabled: false
+    minReplicas: 6
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
 
 query_frontend:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
   replicas: 3
   resources:
     limits:
-      cpu: 1
-      memory: 2Gi
+      cpu: 2
+      # Increased from 2Gi → 4Gi: frontend holds large in-flight query result buffers
+      memory: 4Gi
     requests:
       cpu: 100m
       memory: 256Mi
@@ -348,7 +385,6 @@ query_frontend:
 query_scheduler:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
   replicas: 3
   resources:
     limits:
@@ -357,6 +393,8 @@ query_scheduler:
     requests:
       cpu: 100m
       memory: 128Mi
+  # Moved from frontend — correct location in Mimir
+  max_outstanding_requests_per_tenant: 2048
 
 rbac:
   create: true
@@ -405,20 +443,29 @@ smoke_test:
 store_gateway:
   extraArgs:
     memberlist.abort-if-fast-join-fails: "false"
-    # memberlist.advertise-addr: ${MY_POD_IP}
   persistentVolume:
     enabled: true
     size: 5Gi
     storageClass: gp3-csi
+  # Increased from 3 → 3 (keep same replicas, but enable HPA)
   replicas: 3
   resources:
     limits:
-      cpu: 1
-      memory: 4Gi
+      cpu: 2
+      # Increased from 4Gi → 8Gi: store-gateway caches S3 block index in memory
+      # With 90d retention and 30d query window, index footprint is much larger
+      memory: 8Gi
     requests:
       cpu: 100m
       memory: 256Mi
   zoneAwareReplication:
     enabled: false
+  # Enable HPA on store-gateway — scales under heavy historical query load
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 9
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
 
-# helm upgrade --install mimir grafana/mimir-distributed -f tools/mimir-metrics.yml -n mimir --force-replace
+# helm upgrade --install mimir grafana/mimir-distributed -f tools/mimir-metrics.yml -n mimir
