@@ -1,0 +1,113 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-agent
+  namespace: opentelemetry
+  labels:
+    app.kubernetes.io/component: opentelemetry
+    app.kubernetes.io/instance: agent
+spec:
+  networkPolicy: {}
+  observability:
+    metrics: {}
+  deploymentUpdateStrategy: {}
+  config:
+    exporters:
+      otlp:
+        endpoint: 'otel-gateway.prospecta.com:443'
+        headers:
+          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
+        retry_on_failure:
+          enabled: true
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 10000
+        tls:
+          ca_file: /client-ca/ca.crt
+          cert_file: /client-tls/tls.crt
+          insecure: false
+          key_file: /client-tls/tls.key
+    extensions:
+      health_check:
+        endpoint: '0.0.0.0:13133'
+        path: /
+    processors:
+      batch:
+        send_batch_size: 512
+        timeout: 5s
+      memory_limiter:
+        check_interval: 2s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: '0.0.0.0:4317'
+          http:
+            endpoint: '0.0.0.0:4318'
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        logs:
+          exporters:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          receivers:
+            - otlp
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+  mode: daemonset
+  resources: {}
+  podDnsConfig: {}
+  env:
+    - name: OTEL_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: OTEL_AUTH_TOKEN
+          name: otel-agent-token
+  managementState: managed
+  upgradeStrategy: automatic
+  volumeMounts:
+    - mountPath: /client-tls
+      name: client-tls
+      readOnly: true
+    - mountPath: /client-ca
+      name: client-ca
+      readOnly: true
+  ingress:
+    route: {}
+  volumes:
+    - name: client-tls
+      secret:
+        secretName: otel-gateway-tls
+    - name: client-ca
+      secret:
+        secretName: otel-ca
+  daemonSetUpdateStrategy: {}
+  targetAllocator:
+    allocationStrategy: consistent-hashing
+    collectorNotReadyGracePeriod: 30s
+    collectorTargetReloadInterval: 30s
+    filterStrategy: relabel-config
+    observability:
+      metrics: {}
+    prometheusCR:
+      scrapeInterval: 30s
+    resources: {}
+  image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.142.0'
+  replicas: 0
+  ipFamilyPolicy: SingleStack
+  configVersions: 3

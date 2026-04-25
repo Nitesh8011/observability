@@ -1,0 +1,424 @@
+alertmanager:
+  enabled: false
+
+chunks-cache:
+  enabled: true
+  replicas: 3
+  resources:
+    limits:
+      cpu: 1
+      memory: 3Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+compactor:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  persistentVolume:
+    enabled: true
+    size: 20Gi
+    storageClass: gp3-csi
+  replicas: 3
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+distributor:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  replicas: 3
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+extraEnv:
+- name: AWS_REGION
+  value: ap-southeast-2
+- name: AWS_SDK_LOAD_CONFIG
+  value: "true"
+
+gateway:
+  enabled: true
+  replicas: 3
+  resources:
+    limits:
+      cpu: 1
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+
+global:
+  clusterDomain: cluster.local
+  extraEnv:
+    - name: MY_POD_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+
+index-cache:
+  enabled: true
+  replicas: 3
+  resources:
+    limits:
+      cpu: 100m
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+ingester:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+    blocks-storage.tsdb.retention-period: 13h
+    # Override the Helm chart default which hardcodes abort-if-fast-join-fails=true
+    # Without this override pods crash immediately on cold start before any peer is reachable
+  persistentVolume:
+    enabled: true
+    size: 10Gi
+    storageClass: gp3-csi
+  replicas: 3
+  resources:
+    limits:
+      cpu: 2
+      memory: 20Gi
+    requests:
+      cpu: 500m
+      memory: 256Mi
+  zoneAwareReplication:
+    enabled: false
+
+kafka:
+  config:
+    log.cleaner.enable: "true"
+    log.cleanup.policy: delete
+    log.retention.bytes: "1073741824"
+    log.retention.ms: "3600000"
+    log.segment.bytes: "104857600"
+  enabled: true
+  # extraEnv:
+  # - name: KAFKA_LOG_RETENTION_HOURS
+  #   value: "1"
+  persistence:
+    size: 50Gi
+    storageClass: gp3-csi
+  replicas: 1
+  resources:
+    limits:
+      cpu: 500m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+memcachedExporter:
+  enabled: true
+  resources:
+    limits:
+      cpu: 100m
+      memory: 128Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+metaMonitoring:
+  grafanaAgent:
+    enabled: false
+  serviceMonitor:
+    enabled: true
+    labels:
+      prometheus: grafana
+
+metadata-cache:
+  enabled: true
+  replicas: 3
+  resources:
+    limits:
+      cpu: 100m
+      memory: 1Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+mimir:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # # memberlist.advertise-addr: ${MY_POD_IP}
+  structuredConfig:
+    alertmanager_storage:
+      backend: s3
+      s3:
+        bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+    blocks_storage:
+      backend: s3
+      bucket_store:
+        chunks_cache:
+          backend: memcached
+          memcached:
+            addresses: dnssrvnoa+mimir-chunks-cache.mimir.svc.cluster.local:11211
+            max_async_concurrency: 50
+            max_idle_connections: 100
+        index_cache:
+          backend: memcached
+          memcached:
+            addresses: dnssrvnoa+mimir-index-cache.mimir.svc.cluster.local:11211
+            max_async_concurrency: 50
+            max_idle_connections: 100
+        metadata_cache:
+          backend: memcached
+          memcached:
+            addresses: dnssrvnoa+mimir-metadata-cache.mimir.svc.cluster.local:11211
+            max_idle_connections: 100
+        sync_dir: /data/tsdb-sync
+        sync_interval: 1m
+      s3:
+        bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+      tsdb:
+        block_ranges_period:
+        - 2h
+        dir: /data/tsdb
+        head_compaction_idle_timeout: 1h
+        head_compaction_interval: 1m
+        retention_period: 13h
+        ship_concurrency: 10
+        ship_interval: 1m
+    common:
+      storage:
+        backend: s3
+        s3:
+          endpoint: s3.ap-southeast-2.amazonaws.com
+          region: ap-southeast-2
+    compactor:
+      block_ranges:
+      - 2h
+      - 12h
+      - 24h
+      compaction_concurrency: 4
+      compaction_interval: 30m
+      data_dir: /data/compactor
+      deletion_delay: 12h
+      tenant_cleanup_delay: 6h
+    distributor:
+      ha_tracker:
+        enable_ha_tracker: true
+        kvstore:
+          store: memberlist
+      instance_limits:
+        max_inflight_push_requests: 30000
+      pool:
+        health_check_ingesters: true
+      remote_timeout: 60s
+    frontend:
+      cache_results: true
+      parallelize_shardable_queries: true
+      results_cache:
+        backend: memcached
+        memcached:
+          addresses: dnssrvnoa+mimir-results-cache.mimir.svc.cluster.local:11211
+          max_idle_connections: 100
+      split_queries_by_interval: 24h
+    ingester:
+      instance_limits:
+        max_inflight_push_requests: 30000
+        max_ingestion_rate: 10000000
+        max_series: 5000000
+      ring:
+        heartbeat_period: 5s
+        heartbeat_timeout: 1m
+        kvstore:
+          store: memberlist
+        replication_factor: 3
+    limits:
+      cardinality_analysis_enabled: true
+      compactor_blocks_retention_period: 90d
+      ha_cluster_label: cluster
+      ha_replica_label: prometheus_replica
+      ingestion_burst_size: 2000000
+      ingestion_rate: 1000000
+      max_global_metadata_per_metric: 10000
+      max_global_metadata_per_user: 100000
+      max_global_series_per_metric: 500000
+      max_global_series_per_user: 10000000
+      max_label_name_length: 1024
+      max_label_names_per_series: 30
+      max_label_value_length: 2048
+      max_query_lookback: 30d
+      out_of_order_time_window: 5m
+      query_ingesters_within: 13h
+    memberlist:
+      bind_addr:
+        - 0.0.0.0
+      advertise_addr: ${MY_POD_IP}
+      abort_if_cluster_join_fails: false
+      join_members:
+        - mimir-gossip-ring.{{ .Release.Namespace }}.svc.cluster.local:7946
+      bind_port: 7946
+      dead_node_reclaim_time: 30s
+      gossip_interval: 200ms
+      gossip_nodes: 3
+      packet_dial_timeout: 15s
+      packet_write_timeout: 15s
+      retransmit_factor: 4
+      min_join_backoff: 1s
+      max_join_backoff: 1m
+      max_join_retries: 20
+    multitenancy_enabled: true
+    querier:
+      lookback_delta: 5m
+      max_concurrent: 20
+      timeout: 2m
+    ruler_storage:
+      backend: s3
+      s3:
+        bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+    server:
+      grpc_server_max_concurrent_streams: 1000
+      grpc_server_max_recv_msg_size: 104857600
+      grpc_server_max_send_msg_size: 104857600
+    store_gateway:
+      sharding_ring:
+        kvstore:
+          store: memberlist
+        replication_factor: 3
+    usage_stats:
+      enabled: false
+
+mimir-continuous-test:
+  enabled: false
+
+minio:
+  enabled: false
+
+nginx:
+  enabled: false
+
+overrides_exporter:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  replicas: 3
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+querier:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  replicas: 3
+  resources:
+    limits:
+      cpu: 2
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+query_frontend:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  replicas: 3
+  resources:
+    limits:
+      cpu: 1
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+query_scheduler:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  replicas: 3
+  resources:
+    limits:
+      cpu: 100m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+rbac:
+  create: true
+  pspEnabled: false
+
+results-cache:
+  enabled: true
+  replicas: 3
+  resources:
+    limits:
+      cpu: 100m
+      memory: 2Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+rollout_operator:
+  enabled: false
+
+ruler:
+  enabled: false
+  replicas: 3
+  resources:
+    limits:
+      cpu: 1
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+
+securityContext:
+  fsGroup: 10001
+  runAsNonRoot: true
+  runAsUser: 10001
+  seccompProfile:
+    type: RuntimeDefault
+
+serviceAccount:
+  automountServiceAccountToken: true
+  create: true
+  name: mimir
+
+smoke_test:
+  enabled: true
+
+store_gateway:
+  extraArgs:
+    memberlist.abort-if-fast-join-fails: "false"
+    # memberlist.advertise-addr: ${MY_POD_IP}
+  persistentVolume:
+    enabled: true
+    size: 5Gi
+    storageClass: gp3-csi
+  replicas: 3
+  resources:
+    limits:
+      cpu: 1
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 256Mi
+  zoneAwareReplication:
+    enabled: false
+
+# helm upgrade --install mimir grafana/mimir-distributed -f tools/mimir-metrics.yml -n mimir --force-replace

@@ -1,0 +1,179 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-gateway
+  namespace: opentelemetry
+  finalizers:
+    - opentelemetrycollector.opentelemetry.io/finalizer
+  labels:
+    app.kubernetes.io/component: opentelemetry
+    app.kubernetes.io/instance: collector
+spec:
+  networkPolicy: {}
+  observability:
+    metrics: {}
+  deploymentUpdateStrategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  config:
+    exporters:
+      otlphttp:
+        compression: gzip
+        endpoint: 'http://loki-gateway/otlp'
+        headers:
+          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 900s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 8
+          queue_size: 50000
+        timeout: 60s
+        tls:
+          insecure: true
+    extensions:
+      bearertokenauth/agent:
+        token: '${env:OTEL_AUTH_TOKEN}'
+      health_check:
+        check_collector_pipeline:
+          enabled: true
+          exporter_failure_threshold: 5
+          interval: 5s
+        endpoint: '0.0.0.0:13133'
+        path: /
+    processors:
+      batch/logs:
+        send_batch_max_size: 2048
+        send_batch_size: 1024
+        timeout: 10s
+      memory_limiter:
+        check_interval: 2s
+        limit_mib: 4096
+        limit_percentage: 80
+        spike_limit_percentage: 20
+    receivers:
+      hostmetrics:
+        collection_interval: 30s
+        scrapers:
+          cpu: {}
+          disk: {}
+          load: {}
+          memory: {}
+          network: {}
+      otlp:
+        protocols:
+          grpc:
+            auth:
+              authenticator: bearertokenauth/agent
+            endpoint: '0.0.0.0:4317'
+            keepalive:
+              enforcement_policy:
+                min_time: 5s
+                permit_without_stream: true
+              server_parameters:
+                max_connection_age: 12s
+                max_connection_age_grace: 13s
+                max_connection_idle: 11s
+                time: 30s
+                timeout: 5s
+            max_concurrent_streams: 100
+            max_recv_msg_size_mib: 128
+            read_buffer_size: 524288
+            tls:
+              ca_file: /client-ca/ca.crt
+              cert_file: /server-tls/tls.crt
+              client_ca_file: /client-ca/ca.crt
+              key_file: /server-tls/tls.key
+            write_buffer_size: 524288
+          http:
+            auth:
+              authenticator: bearertokenauth/agent
+            endpoint: '0.0.0.0:4318'
+            tls:
+              ca_file: /client-ca/ca.crt
+              cert_file: /server-tls/tls.crt
+              client_ca_file: /client-ca/ca.crt
+              key_file: /server-tls/tls.key
+    service:
+      extensions:
+        - health_check
+        - bearertokenauth/agent
+      pipelines:
+        logs:
+          exporters:
+            - otlphttp
+          processors:
+            - memory_limiter
+            - batch/logs
+          receivers:
+            - otlp
+      telemetry:
+        logs:
+          encoding: json
+          initial_fields:
+            service: otel-collector
+          level: info
+        metrics:
+          level: detailed
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+  mode: deployment
+  resources:
+    limits:
+      cpu: '2'
+      memory: 8Gi
+    requests:
+      cpu: 100m
+      memory: 4Gi
+  podDnsConfig: {}
+  env:
+    - name: OTEL_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: OTEL_AUTH_TOKEN
+          name: otel-gateway-token
+  managementState: managed
+  upgradeStrategy: automatic
+  securityContext:
+    runAsGroup: 0
+    runAsUser: 0
+  volumeMounts:
+    - mountPath: /server-tls
+      name: server-tls
+      readOnly: true
+    - mountPath: /client-ca
+      name: client-ca
+      readOnly: true
+  ingress:
+    route: {}
+  serviceAccount: otel-gateway-collector
+  volumes:
+    - name: server-tls
+      secret:
+        secretName: otel-gateway-tls
+    - name: client-ca
+      secret:
+        secretName: otel-ca
+  daemonSetUpdateStrategy: {}
+  targetAllocator:
+    allocationStrategy: consistent-hashing
+    collectorNotReadyGracePeriod: 30s
+    collectorTargetReloadInterval: 30s
+    filterStrategy: relabel-config
+    observability:
+      metrics: {}
+    prometheusCR:
+      scrapeInterval: 30s
+    resources: {}
+  image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.142.0'
+  replicas: 1
+  ipFamilyPolicy: SingleStack
+  configVersions: 3

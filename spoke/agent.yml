@@ -1,0 +1,370 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-agent
+  namespace: opentelemetry
+  labels:
+    app.kubernetes.io/component: opentelemetry
+    app.kubernetes.io/instance: agent
+spec:
+  networkPolicy:
+    enabled: true
+  observability:
+    metrics: {}
+  deploymentUpdateStrategy: {}
+  config:
+    exporters:
+      otlp:
+        endpoint: 'otel-gateway.prospecta.com:443'
+        headers:
+          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 300s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 2
+          queue_size: 500
+        timeout: 30s
+        tls:
+          ca_file: /client-ca/ca.crt
+          cert_file: /client-tls/tls.crt
+          insecure: false
+          key_file: /client-tls/tls.key
+      prometheus:
+        endpoint: '0.0.0.0:8889'
+    extensions:
+      health_check:
+        endpoint: '0.0.0.0:13133'
+        path: /
+    processors:
+      batch:
+        send_batch_max_size: 1024
+        send_batch_size: 512
+        timeout: 10s
+      filter:
+        metrics:
+          exclude:
+            match_type: regexp
+            metric_names:
+              - .*_bucket
+              - .*_sum
+              - .*_count
+      k8sattributes:
+        auth_type: serviceAccount
+        extract:
+          metadata:
+            - k8s.deployment.name
+            - k8s.namespace.name
+        passthrough: false
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+          - sources:
+              - from: connection
+      memory_limiter:
+        check_interval: 1s
+        limit_percentage: 75
+        spike_limit_percentage: 15
+      resource:
+        attributes:
+          - action: insert
+            key: cluster.name
+            value: onprem
+    receivers:
+      hostmetrics:
+        collection_interval: 30s
+        scrapers:
+          cpu: {}
+          disk: {}
+          filesystem: {}
+          load: {}
+          memory: {}
+          network: {}
+          processes: {}
+      k8s_cluster:
+        collection_interval: 30s
+        node_conditions_to_report:
+          - Ready
+          - MemoryPressure
+          - DiskPressure
+      otlp:
+        protocols:
+          grpc:
+            endpoint: '0.0.0.0:4317'
+          http:
+            endpoint: '0.0.0.0:4318'
+      prometheus:
+        config:
+          global:
+            scrape_interval: 120s
+            scrape_timeout: 30s
+          scrape_configs:
+            - body_size_limit: 10MiB
+              job_name: otel-self
+              sample_limit: 3000
+              scrape_interval: 120s
+              static_configs:
+                - targets:
+                    - 'otel-collector:8889'
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        logs:
+          exporters:
+            - otlp
+          processors:
+            - memory_limiter
+            - k8sattributes
+            - resource
+            - batch
+          receivers:
+            - otlp
+        metrics:
+          exporters:
+            - otlp
+            - prometheus
+          processors:
+            - memory_limiter
+            - k8sattributes
+            - resource
+            - batch
+          receivers:
+            - otlp
+            - hostmetrics
+            - k8s_cluster
+            - prometheus
+        traces:
+          exporters:
+            - otlp
+          processors:
+            - memory_limiter
+            - k8sattributes
+            - resource
+            - batch
+          receivers:
+            - otlp
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+  mode: daemonset
+  resources:
+    limits:
+      cpu: '1'
+      memory: 4Gi
+    requests:
+      cpu: 100m
+      memory: 512Mi
+  podDnsConfig: {}
+  env:
+    - name: OTEL_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          key: OTEL_AUTH_TOKEN
+          name: otel-agent-token
+    - name: NODE_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.hostIP
+    - name: POD_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: metadata.name
+    - name: GOGC
+      value: '70'
+    - name: GOMEMLIMIT
+      value: 3700MiB
+  managementState: managed
+  upgradeStrategy: automatic
+  volumeMounts:
+    - mountPath: /client-tls
+      name: client-tls
+      readOnly: true
+    - mountPath: /client-ca
+      name: client-ca
+      readOnly: true
+  ingress:
+    route: {}
+  volumes:
+    - name: client-tls
+      secret:
+        secretName: otel-agent-tls
+    - name: client-ca
+      secret:
+        secretName: otel-agent-ca
+  daemonSetUpdateStrategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  targetAllocator:
+    observability:
+      metrics: {}
+    enabled: true
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 256Mi
+    filterStrategy: relabel-config
+    allocationStrategy: per-node
+    serviceAccount: otel-agent-targetallocator
+    prometheusCR:
+      enabled: true
+      podMonitorSelector:
+        matchLabels:
+          prometheus: grafana
+      scrapeInterval: 1m0s
+      serviceMonitorSelector:
+        matchLabels:
+          prometheus: grafana
+    replicas: 3
+    collectorNotReadyGracePeriod: 30s
+    collectorTargetReloadInterval: 30s
+  image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.149.0'
+  replicas: 3
+  ipFamilyPolicy: SingleStack
+  configVersions: 3
+  podAnnotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: 'true'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector-role
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - namespaces
+      - nodes
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - services
+      - endpoints
+      - resourcequotas
+      - replicationcontrollers
+      - limitranges
+      - persistentvolumes
+      - persistentvolumeclaims
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - daemonsets
+      - deployments
+      - replicasets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - nodes/metrics
+      - nodes/stats
+      - nodes/proxy
+    verbs: ["get"]
+  - nonResourceURLs:
+      - /metrics
+      - /metrics/cadvisor
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector-role
+subjects:
+  - kind: ServiceAccount
+    name: otel-agent-collector
+    namespace: opentelemetry
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: otel-agent-collector
+  namespace: opentelemetry
+# oc adm policy add-scc-to-user privileged -z otel-gateway-collector
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-agent-targetallocator
+  namespace: opentelemetry
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-agent-targetallocator-role
+rules:
+  - apiGroups: ["monitoring.coreos.com"]
+    resources:
+      - servicemonitors
+      - podmonitors
+    verbs: ["*"]
+  - apiGroups: [""]
+    resources:
+      - services
+      - endpoints
+      - pods
+      - nodes
+      - namespaces
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources:
+      - nodes/metrics
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["discovery.k8s.io"]
+    resources:
+      - endpointslices
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs:
+      - /metrics
+      - /api
+      - /api/*
+      - /apis
+      - /apis/*
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-agent-targetallocator-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-agent-targetallocator-role
+subjects:
+  - kind: ServiceAccount
+    name: otel-agent-targetallocator
+    namespace: opentelemetry

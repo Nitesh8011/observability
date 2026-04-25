@@ -1,0 +1,36 @@
+{
+  "Rules": [
+    {
+      "ID": "loki-fake-retention-90days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "fake/"
+      },
+      "Expiration": {
+        "Days": 90
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    },
+    {
+      "ID": "loki-index-retention-90days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "index/"
+      },
+      "Expiration": {
+        "Days": 90
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    }
+  ]
+}

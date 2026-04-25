@@ -1,0 +1,20 @@
+{
+  "Rules": [
+    {
+      "ID": "mimir-anonymous-retention-90days",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "anonymous/"
+      },
+      "Expiration": {
+        "Days": 90
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 90
+      },
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    }
+  ]
+}

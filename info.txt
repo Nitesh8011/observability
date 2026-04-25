@@ -1,0 +1,40 @@
+helm upgrade --install memcached oci://registry-1.docker.io/bitnamicharts/memcached \
+  -n memcached \
+  --set architecture=high-availability \
+  --set replicaCount=3 \
+  --set resources.requests.cpu=50m \
+  --set resources.requests.memory=100Mi \
+  --set resources.limits.cpu=500m \
+  --set resources.limits.memory=1Gi \
+  --set pdb.create=true \
+  --set pdb.minAvailable=2 \
+  --set extraFlags[0]="-I 5m" \
+  --set extraFlags[1]="-m 768"
+
+
+
+
+otel-logs-597088041925-ap-southeast-2-an
+otel-metrics-597088041925-ap-southeast-2-an
+
+
+nginx ingress crd
+grafana crd
+cert manager crd 
+otel crd
+ekc crd
+
+
+tls cert
+token secret
+
+
+loki
+mimir
+jaeger+elasticsearch
+otel gateway
+
+
+
+
+otel agent

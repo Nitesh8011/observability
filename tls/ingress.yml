@@ -1,0 +1,28 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: otel-gateway-ingress
+  namespace: opentelemetry
+  annotations:
+    haproxy.org/backend-protocol: "h2"       # gRPC / HTTP2 backend
+    haproxy.org/ssl-redirect: "true"
+    haproxy.org/timeout-connect: "5s"
+    haproxy.org/timeout-client: "120s"       # long-lived gRPC streams
+    haproxy.org/timeout-server: "120s"
+spec:
+  ingressClassName: haproxy
+  tls:
+    - hosts:
+        - otel-gateway.prospecta.com
+      secretName: otel-gateway-tls           # your own cert mounted here
+  rules:
+    - host: otel-gateway.prospecta.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: otel-agent-collector   # OTel operator creates this service
+                port:
+                  number: 4317

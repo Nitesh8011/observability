@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: otel-gateway-ingress
+  namespace: opentelemetry
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-passthrough: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "GRPCS"
+    nginx.ingress.kubernetes.io/health-check-path: "/"
+    nginx.ingress.kubernetes.io/health-check-port: "13133"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - otel-gateway.prospecta.com
+      secretName: otel-gateway-tls
+  rules:
+    - host: otel-gateway.prospecta.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: otel-gateway-collector
+                port:
+                  number: otlp-grpc

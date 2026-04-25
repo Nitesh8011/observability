@@ -1,0 +1,53 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-trace-blocks",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "single-tenant/"
+      },
+      "Expiration": {
+        "Days": 8
+      },
+      "NoncurrentVersionExpiration": {
+        "NoncurrentDays": 1
+      }
+    },
+    {
+      "ID": "expire-compacted-blocks",
+      "Status": "Enabled",
+      "Filter": {
+        "And": {
+          "Prefix": "single-tenant/",
+          "Tags": [
+            {
+              "Key": "tempo-compacted",
+              "Value": "true"
+            }
+          ]
+        }
+      },
+      "Expiration": {
+        "Days": 2
+      }
+    },
+    {
+      "ID": "abort-incomplete-multipart",
+      "Status": "Enabled",
+      "Filter": {},
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 1
+      }
+    },
+    {
+      "ID": "expire-cluster-seed",
+      "Status": "Enabled",
+      "Filter": {
+        "Prefix": "tempo_cluster_seed.json"
+      },
+      "Expiration": {
+        "Days": 30
+      }
+    }
+  ]
+}

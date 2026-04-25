@@ -1,0 +1,437 @@
+# =============================================================================
+# PRE-REQUISITES — your existing secrets:
+#
+#   Secret: otel-ca  (Opaque)
+#     └── ca.crt
+#
+#   Secret: otel-gateway-tls  (kubernetes.io/tls)
+#     ├── tls.crt
+#     └── tls.key
+# =============================================================================
+
+---
+# =============================================================================
+# SECRET — Agent → Gateway bearer token
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: otel-agent-token
+  namespace: opentelemetry
+type: Opaque
+stringData:
+  OTEL_AUTH_TOKEN: "your-agent-to-gateway-bearer-token"
+
+---
+# =============================================================================
+# SECRET — Gateway → Loki bearer token
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: otel-token
+  namespace: opentelemetry
+type: Opaque
+stringData:
+  OTEL_AUTH_TOKEN: "your-gateway-to-loki-bearer-token"
+
+---
+# =============================================================================
+# INGRESS — HAProxy
+# TLS terminated using otel-gateway-tls
+# mTLS: agent client cert verified against CA in otel-ca at edge
+# gRPC (HTTP/2) routed to gateway pod on :4317
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: otel-gateway-ingress
+  namespace: opentelemetry
+  annotations:
+    haproxy.org/backend-protocol: "h2"
+    haproxy.org/ssl-redirect: "true"
+    haproxy.org/timeout-connect: "5s"
+    haproxy.org/timeout-client: "120s"
+    haproxy.org/timeout-server: "120s"
+    haproxy.org/client-ca: "opentelemetry/otel-ca"                  # your CA secret
+    haproxy.org/ssl-certificate: "opentelemetry/otel-gateway-tls"   # your server cert secret
+spec:
+  # ingressClassName: haproxy
+  tls:
+    - hosts:
+        - otel-gateway.prospecta.com
+      secretName: otel-gateway-tls                                   # your server cert secret
+  rules:
+    - host: otel-gateway.prospecta.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: otel-gateway-collector
+                port:
+                  number: 4317
+
+---
+# =============================================================================
+# OTEL COLLECTOR — Agent (DaemonSet)
+# Receives from app pods  : cluster-internal HTTP, no auth
+# Exports to gateway      : internet, mTLS (client cert) + Bearer token
+#
+# Mounts:
+#   otel-gateway-tls → /client-tls  (tls.crt, tls.key — presented as client cert)
+#   otel-ca          → /client-ca   (ca.crt  — used to verify gateway server cert)
+# =============================================================================
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-agent
+  namespace: opentelemetry
+  labels:
+    app.kubernetes.io/component: opentelemetry
+    app.kubernetes.io/instance: agent
+spec:
+  mode: daemonset
+  image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.142.0'
+  replicas: 1
+  ipFamilyPolicy: SingleStack
+  managementState: managed
+  upgradeStrategy: automatic
+  networkPolicy: {}
+  observability:
+    metrics: {}
+  deploymentUpdateStrategy: {}
+  daemonSetUpdateStrategy: {}
+  podDnsConfig: {}
+  resources: {}
+  ingress:
+    route: {}
+
+  env:
+    - name: OTEL_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: otel-agent-token
+          key: OTEL_AUTH_TOKEN
+
+  volumeMounts:
+    - name: client-tls
+      mountPath: /client-tls    # tls.crt + tls.key from otel-gateway-tls
+      readOnly: true
+    - name: client-ca
+      mountPath: /client-ca     # ca.crt from otel-ca
+      readOnly: true
+  volumes:
+    - name: client-tls
+      secret:
+        secretName: otel-gateway-tls   # your tls secret
+    - name: client-ca
+      secret:
+        secretName: otel-ca            # your CA secret
+
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: '0.0.0.0:4317'
+          http:
+            endpoint: '0.0.0.0:4318'
+
+    processors:
+      memory_limiter:
+        check_interval: 2s
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch:
+        send_batch_size: 512
+        timeout: 5s
+
+    exporters:
+      otlp:
+        endpoint: 'otel-gateway.prospecta.com:443'
+        headers:
+          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
+        retry_on_failure:
+          enabled: true
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 10000
+        tls:
+          insecure: false
+          cert_file: /client-tls/tls.crt   # from otel-gateway-tls
+          key_file:  /client-tls/tls.key   # from otel-gateway-tls
+          ca_file:   /client-ca/ca.crt     # from otel-ca
+
+    extensions:
+      health_check:
+        endpoint: '0.0.0.0:13133'
+        path: /
+
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        logs:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch
+          exporters:
+            - otlp
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+
+  targetAllocator:
+    allocationStrategy: consistent-hashing
+    collectorNotReadyGracePeriod: 30s
+    collectorTargetReloadInterval: 30s
+    filterStrategy: relabel-config
+    observability:
+      metrics: {}
+    prometheusCR:
+      scrapeInterval: 30s
+    resources: {}
+  configVersions: 3
+
+---
+# =============================================================================
+# OTEL COLLECTOR — Gateway (Deployment)
+# HAProxy has already at the edge:
+#   1. Terminated TLS        — using otel-gateway-tls
+#   2. Verified client cert  — against otel-ca (mTLS)
+# Gateway adds second factor: Bearer token validation via bearertokenauth
+# No TLS volumes needed — pod receives plain h2c from HAProxy
+# Exports to Loki cluster-internally
+# =============================================================================
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-gateway
+  namespace: opentelemetry
+  finalizers:
+    - opentelemetrycollector.opentelemetry.io/finalizer
+  labels:
+    app.kubernetes.io/component: opentelemetry
+    app.kubernetes.io/instance: collector
+spec:
+  mode: deployment
+  image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.142.0'
+  replicas: 1
+  ipFamilyPolicy: SingleStack
+  managementState: managed
+  upgradeStrategy: automatic
+  networkPolicy: {}
+  observability:
+    metrics: {}
+  deploymentUpdateStrategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  daemonSetUpdateStrategy: {}
+  podDnsConfig: {}
+  securityContext:
+    runAsGroup: 0
+    runAsUser: 0
+  ingress:
+    route: {}
+  serviceAccount: otel-gateway-collector
+
+  env:
+    - name: OTEL_AUTH_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: otel-token
+          key: OTEL_AUTH_TOKEN
+
+  resources:
+    limits:
+      cpu: '2'
+      memory: 8Gi
+    requests:
+      cpu: 100m
+      memory: 4Gi
+
+  config:
+    receivers:
+      hostmetrics:
+        collection_interval: 30s
+        scrapers:
+          cpu: {}
+          disk: {}
+          load: {}
+          memory: {}
+          network: {}
+      otlp:
+        protocols:
+          grpc:
+            endpoint: '0.0.0.0:4317'
+            auth:
+              authenticator: bearertokenauth/agent   # second factor after mTLS at HAProxy
+            # No tls block — HAProxy terminated TLS + verified client cert already
+            keepalive:
+              enforcement_policy:
+                min_time: 5s
+                permit_without_stream: true
+              server_parameters:
+                max_connection_age: 12s
+                max_connection_age_grace: 13s
+                max_connection_idle: 11s
+                time: 30s
+                timeout: 5s
+            max_concurrent_streams: 100
+            max_recv_msg_size_mib: 128
+            read_buffer_size: 524288
+            write_buffer_size: 524288
+          http:
+            endpoint: '0.0.0.0:4318'
+            auth:
+              authenticator: bearertokenauth/agent
+
+    processors:
+      memory_limiter:
+        check_interval: 2s
+        limit_mib: 4096
+        limit_percentage: 80
+        spike_limit_percentage: 20
+      batch/logs:
+        send_batch_max_size: 2048
+        send_batch_size: 1024
+        timeout: 10s
+
+    exporters:
+      otlphttp:
+        compression: gzip
+        endpoint: 'http://loki-gateway/otlp'
+        headers:
+          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 900s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 8
+          queue_size: 50000
+        timeout: 60s
+        tls:
+          insecure: true                             # cluster-internal, no TLS needed
+
+    extensions:
+      bearertokenauth/agent:
+        token: '${env:OTEL_AUTH_TOKEN}'
+      health_check:
+        check_collector_pipeline:
+          enabled: true
+          exporter_failure_threshold: 5
+          interval: 5s
+        endpoint: '0.0.0.0:13133'
+        path: /
+
+    service:
+      extensions:
+        - health_check
+        - bearertokenauth/agent
+      pipelines:
+        logs:
+          receivers:
+            - otlp
+          processors:
+            - memory_limiter
+            - batch/logs
+          exporters:
+            - otlphttp
+      telemetry:
+        logs:
+          encoding: json
+          initial_fields:
+            service: otel-collector
+          level: info
+        metrics:
+          level: detailed
+          readers:
+            - pull:
+                exporter:
+                  prometheus:
+                    host: 0.0.0.0
+                    port: 8888
+
+  targetAllocator:
+    allocationStrategy: consistent-hashing
+    collectorNotReadyGracePeriod: 30s
+    collectorTargetReloadInterval: 30s
+    filterStrategy: relabel-config
+    observability:
+      metrics: {}
+    prometheusCR:
+      scrapeInterval: 30s
+    resources: {}
+  configVersions: 3
+
+---
+# =============================================================================
+# INSTRUMENTATION — Auto-instrumentation for app pods (unchanged)
+# Points to agent on cluster-internal HTTP — no auth needed here
+# =============================================================================
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: dev-agent-instrumentation
+spec:
+  exporter:
+    endpoint: 'http://otel-agent-collector.opentelemetry:4318'
+  java:
+    env:
+      - name: OTEL_LOGS_EXPORTER
+        value: otlp
+      - name: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
+        value: http/protobuf
+      - name: OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
+        value: 'http://otel-agent-collector.opentelemetry:4318/v1/logs'
+      - name: OTEL_TRACES_EXPORTER
+        value: none
+      - name: OTEL_METRICS_EXPORTER
+        value: none
+      - name: OTEL_BLRP_MAX_QUEUE_SIZE
+        value: '2048'
+      - name: OTEL_BLRP_MAX_EXPORT_BATCH_SIZE
+        value: '512'
+      - name: OTEL_BLRP_SCHEDULE_DELAY
+        value: '5000'
+      - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_EXPERIMENTAL_CAPTURE_MDC_ATTRIBUTES
+        value: '*'
+      - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_EXPERIMENTAL_LOG_ATTRIBUTES
+        value: 'true'
+      - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_EXPERIMENTAL_CAPTURE_KEY_VALUE_PAIR_ATTRIBUTES
+        value: 'true'
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java
+    resources:
+      limits:
+        cpu: 500m
+        memory: 256Mi
+      requests:
+        cpu: 50m
+        memory: 64Mi
+    volumeClaimTemplate:
+      metadata: {}
+      spec:
+        resources: {}
+  sampler:
+    argument: '1.0'
+    type: parentbased_traceidratio
+  defaults: {}
+  propagators:
+    - tracecontext
+    - baggage
