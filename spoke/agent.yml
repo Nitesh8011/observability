@@ -112,7 +112,7 @@ spec:
               scrape_interval: 120s
               static_configs:
                 - targets:
-                    - 'otel-collector:8889'
+                    - 'localhost:8889'
     service:
       extensions:
         - health_check
