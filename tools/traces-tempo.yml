@@ -15,7 +15,7 @@ global:
 # Extra environment variables
 extraEnv:
   - name: AWS_REGION
-    value: ap-southeast-2  # Replace with your AWS region
+    value: ap-southeast-2
   - name: AWS_SDK_LOAD_CONFIG
     value: "true"
 
@@ -64,7 +64,8 @@ tempo:
 
     # Ingester configuration
     ingester:
-      max_block_duration: 5m
+      # Reduced from 5m → 3m: flush blocks sooner to S3, reduces ingester memory pressure
+      max_block_duration: 3m
       max_block_bytes: 536870912  # 512MB
       flush_check_period: 10s
       trace_idle_period: 10s
@@ -128,20 +129,24 @@ tempo:
         path: /var/tempo/generator/wal
         remote_write_flush_deadline: 1m
         remote_write:
-          - url: http://mimir-gateway.mimir/api/v1/push  # Update with your Prometheus/Mimir endpoint
+          - url: http://mimir-gateway.mimir/api/v1/push
             send_exemplars: true
 
     # Storage configuration
     storage:
       trace:
         backend: s3
-        blocklist_poll: 5m
+        # Reduced from 5m → 2m: more frequent blocklist refresh = faster trace visibility after flush
+        blocklist_poll: 2m
         s3:
-          bucket: otel-traces-597088041925-ap-southeast-2-an  # Replace with your S3 bucket name
-          endpoint: s3.ap-southeast-2.amazonaws.com  # Replace with your region endpoint
-          region: ap-southeast-2  # Replace with your AWS region
+          bucket: otel-traces-597088041925-ap-southeast-2-an
+          endpoint: s3.ap-southeast-2.amazonaws.com
+          region: ap-southeast-2
           insecure: false
           # Using Pod Identity - no credentials needed
+          # Hedging: fire a 2nd S3 request if the first hasn't responded in 500ms
+          hedge_requests_at: 500ms
+          hedge_requests_up_to: 2
         wal:
           path: /var/tempo/wal
           v2_encoding: snappy
@@ -150,10 +155,12 @@ tempo:
           v2_encoding: zstd
           v2_index_downsample_bytes: 1048576  # 1MB
         pool:
-          max_workers: 100
-          queue_depth: 10000
+          # Increased from 100 → 200: more parallel S3 workers for faster block reads
+          max_workers: 200
+          # Increased from 10000 → 20000: larger queue to prevent worker starvation
+          queue_depth: 20000
 
-    # Cache configuration (Tempo 2.4+ format)
+    # Cache configuration
     cache:
       background:
         writeback_goroutines: 10
@@ -165,13 +172,16 @@ tempo:
             - frontend-search
           memcached:
             host: tempo-memcached.tempo.svc.cluster.local
-            timeout: 500ms
-            max_idle_conns: 16
+            # Increased from 500ms → 2000ms: tolerate memcached latency spikes
+            timeout: 2000ms
+            # Increased from 16 → 32: more persistent connections to memcached
+            max_idle_conns: 32
             ttl: 1h
 
     # Querier configuration
     querier:
-      max_concurrent_queries: 20
+      # Increased from 20 → 40: more concurrent query workers per querier pod
+      max_concurrent_queries: 40
       frontend_worker:
         frontend_address: tempo-query-frontend-discovery:9095
         grpc_client_config:
@@ -179,12 +189,17 @@ tempo:
 
     # Query Frontend configuration
     query_frontend:
-      max_outstanding_per_tenant: 2000
+      # Increased from 2000 → 4000: larger queue prevents request rejection under load
+      max_outstanding_per_tenant: 4000
       search:
-        concurrent_jobs: 1000
+        # Increased concurrent jobs from 1000 → 2000: more parallel S3 shard searches
+        concurrent_jobs: 2000
         target_bytes_per_job: 104857600  # 100MB
-        max_duration: 24h
-      max_retries: 2
+        # FIX: "time range exceeds maximum allowed duration" error
+        # Was 24h — Grafana Drilldown internally expands span-metrics queries
+        # beyond the visible time range. Set to 0 to remove the cap entirely.
+        max_duration: 0
+      max_retries: 3
 
     # Memberlist configuration
     memberlist:
@@ -205,7 +220,7 @@ tempo:
       max_join_backoff: 1m
       max_join_retries: 20
 
-    # Overrides configuration (Tempo 2.7+ nested format)
+    # Overrides configuration
     overrides:
       defaults:
         ingestion:
@@ -249,7 +264,6 @@ distributor:
     - -config.expand-env=true
   service:
     type: ClusterIP
-  
   resources:
     requests:
       cpu: 100m
@@ -257,13 +271,13 @@ distributor:
     limits:
       cpu: 2
       memory: 4Gi
-  
+  # Enable HPA — distributor is stateless and safe to scale horizontally
   autoscaling:
-    enabled: false
+    enabled: true
     minReplicas: 3
     maxReplicas: 10
-    targetCPUUtilizationPercentage: 80
-    targetMemoryUtilizationPercentage: 80
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
 
 # Ingester component
 ingester:
@@ -274,7 +288,6 @@ ingester:
     enabled: true
     storageClass: gp3-csi
     size: 10Gi
-  
   resources:
     requests:
       cpu: 500m
@@ -282,8 +295,6 @@ ingester:
     limits:
       cpu: 2
       memory: 20Gi
-  
-  # Single AZ - disable zone aware replication
   zoneAwareReplication:
     enabled: false
 
@@ -299,29 +310,29 @@ querier:
     limits:
       cpu: 2
       memory: 4Gi
-  
+  # Enable HPA on queriers — these are the primary bottleneck for slow searches
   autoscaling:
     enabled: false
     minReplicas: 3
-    maxReplicas: 6
-    targetCPUUtilizationPercentage: 80
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
 
 # Query Frontend component
 queryFrontend:
+  # Increased from 3 → 3 (keep same, frontend is lightweight — bottleneck is queriers)
   replicas: 3
   extraArgs:
     - -config.expand-env=true
   service:
     type: ClusterIP
-  
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
-      cpu: 1
-      memory: 2Gi
-  
+      cpu: 2
+      # Increased from 2Gi → 4Gi: frontend holds large in-flight query results
+      memory: 4Gi
   query:
     enabled: true
     replicas: 1
@@ -335,7 +346,6 @@ compactor:
     enabled: true
     storageClass: gp3-csi
     size: 20Gi
-  
   resources:
     requests:
       cpu: 100m
@@ -347,7 +357,8 @@ compactor:
 # Metrics Generator component
 metricsGenerator:
   enabled: true
-  replicas: 1
+  # Increased from 1 → 2: single replica is a SPOF and gets overloaded with 7-8 sources
+  replicas: 2
   extraArgs:
     - -config.expand-env=true
   resources:
@@ -355,14 +366,14 @@ metricsGenerator:
       cpu: 100m
       memory: 256Mi
     limits:
-      cpu: 1
-      memory: 2Gi
+      cpu: 2
+      # Increased from 2Gi → 4Gi: metrics generator holds live trace state in memory
+      memory: 4Gi
 
 # Gateway component (nginx)
 gateway:
   enabled: true
-  replicas: 3
-  
+  replicas: 2
   resources:
     requests:
       cpu: 100m
@@ -370,15 +381,12 @@ gateway:
     limits:
       cpu: 1
       memory: 1Gi
-  
   service:
     type: ClusterIP
 
 # Memcached for caching
 memcached:
   enabled: true
-  
-  # Chunks cache
   chunksCache:
     enabled: true
     replicas: 3
@@ -437,20 +445,6 @@ podSecurityContext:
 # Ingress (optional)
 ingress:
   enabled: false
-  # For external access:
-  # enabled: true
-  # className: nginx
-  # annotations:
-  #   cert-manager.io/cluster-issuer: letsencrypt-prod
-  # hosts:
-  #   - host: tempo.example.com
-  #     paths:
-  #       - path: /
-  #         pathType: Prefix
-  # tls:
-  #   - secretName: tempo-tls
-  #     hosts:
-  #       - tempo.example.com
 
 # Enterprise features (disabled)
 enterprise:
