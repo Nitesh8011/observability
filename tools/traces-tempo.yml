@@ -81,7 +81,7 @@ tempo:
     # Compactor configuration
     compactor:
       compaction:
-        block_retention: 168h  # 7 days
+        block_retention: 720h  # 30 days
         compacted_block_retention: 1h
         compaction_window: 1h
         max_compaction_objects: 6000000
@@ -189,17 +189,18 @@ tempo:
 
     # Query Frontend configuration
     query_frontend:
-      # Increased from 2000 → 4000: larger queue prevents request rejection under load
       max_outstanding_per_tenant: 4000
       search:
-        # Increased concurrent jobs from 1000 → 2000: more parallel S3 shard searches
         concurrent_jobs: 2000
-        target_bytes_per_job: 104857600  # 100MB
-        # FIX: "time range exceeds maximum allowed duration" error
-        # Was 24h — Grafana Drilldown internally expands span-metrics queries
-        # beyond the visible time range. Set to 0 to remove the cap entirely.
+        target_bytes_per_job: 104857600 # 100MB
         max_duration: 0
       max_retries: 3
+      metrics:
+        concurrent_jobs: 2000
+        target_bytes_per_job: 104857600
+        max_duration: 0        # remove the 3h cap on TraceQL metrics queries
+        query_backend_after: 5m
+        interval: 5m
 
     # Memberlist configuration
     memberlist:
@@ -224,18 +225,17 @@ tempo:
     overrides:
       defaults:
         ingestion:
-          rate_limit_bytes: 15000000  # 15MB/s per tenant
-          burst_size_bytes: 20000000  # 20MB burst
+          rate_limit_bytes: 15000000
+          burst_size_bytes: 20000000
         global:
-          max_bytes_per_trace: 5000000  # 5MB
+          max_bytes_per_trace: 5000000
         compaction:
-          block_retention: 168h  # 7 days
+          block_retention: 720h
         metrics_generator:
           processors:
             - service-graphs
             - span-metrics
             - local-blocks
-
 # Traces ingestion protocols
 traces:
   otlp:
@@ -273,7 +273,7 @@ distributor:
       memory: 4Gi
   # Enable HPA — distributor is stateless and safe to scale horizontally
   autoscaling:
-    enabled: true
+    enabled: false
     minReplicas: 3
     maxReplicas: 10
     targetCPUUtilizationPercentage: 70
