@@ -33,13 +33,16 @@ spec:
           cert_file: /client-tls/tls.crt
           insecure: false
           key_file: /client-tls/tls.key
-      prometheus:
-        endpoint: '0.0.0.0:8889'
     extensions:
       health_check:
         endpoint: '0.0.0.0:13133'
         path: /
     processors:
+      attributes:
+        actions:
+          - action: extract
+            key: instance
+            pattern: '^(?P<k8s_namespace_name>[^.]+)\.(?P<k8s_pod_name>[^.]+)\.(?P<k8s_container_name>.+)$'
       batch:
         send_batch_max_size: 1024
         send_batch_size: 512
@@ -52,6 +55,18 @@ spec:
               - .*_bucket
               - .*_sum
               - .*_count
+              - target_info
+              - otel.*
+              - otlp_.*
+              - scrape_.*
+              - go_.*
+              - process_.*
+              - rpc_.*
+              - system_.*
+              - exported_.*
+              - queueSize_ratio
+              - processedLogs_total
+              - processedSpans_total
       k8sattributes:
         auth_type: serviceAccount
         extract:
@@ -70,7 +85,9 @@ spec:
               - from: connection
       memory_limiter:
         check_interval: 1s
+        limit_mib: 3700
         limit_percentage: 75
+        spike_limit_mib: 200
         spike_limit_percentage: 15
       resource:
         attributes:
@@ -102,14 +119,8 @@ spec:
             endpoint: '0.0.0.0:4318'
       prometheus:
         config:
-          global:
-            scrape_interval: 120s
-            scrape_timeout: 30s
           scrape_configs:
-            - body_size_limit: 10MiB
-              job_name: otel-self
-              sample_limit: 3000
-              scrape_interval: 120s
+            - job_name: otel-self
               static_configs:
                 - targets:
                     - 'localhost:8889'
@@ -130,11 +141,12 @@ spec:
         metrics:
           exporters:
             - otlp
-            - prometheus
           processors:
             - memory_limiter
             - k8sattributes
+            - attributes
             - resource
+            - filter
             - batch
           receivers:
             - otlp
@@ -176,14 +188,6 @@ spec:
         secretKeyRef:
           key: OTEL_AUTH_TOKEN
           name: otel-agent-token
-    - name: NODE_IP
-      valueFrom:
-        fieldRef:
-          fieldPath: status.hostIP
-    - name: POD_NAME
-      valueFrom:
-        fieldRef:
-          fieldPath: metadata.name
     - name: GOGC
       value: '70'
     - name: GOMEMLIMIT
@@ -323,9 +327,7 @@ metadata:
   name: otel-agent-targetallocator-role
 rules:
   - apiGroups: ["monitoring.coreos.com"]
-    resources:
-      - servicemonitors
-      - podmonitors
+    resources: ["*"]
     verbs: ["*"]
   - apiGroups: [""]
     resources:

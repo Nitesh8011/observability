@@ -7,57 +7,13 @@ metadata:
     prometheus: grafana
 spec:
   endpoints:
-    - interval: 60s
+    - interval: 30s
       path: /metrics
       port: prometheus
-      metricRelabelings:
-        - action: drop
-          regex: target_info|system_processes_created_total|system_.*|scrape_.*|rpc_.*|otlp_.*|otel_.*|queueSize_ratio|processedLogs_total|processedSpans_total
-          sourceLabels:
-            - __name__
-        - action: drop
-          regex: otelcol_.*
-          sourceLabels:
-            - __name__
-        - action: drop
-          regex: scrape_.*
-          sourceLabels:
-            - __name__
-        - action: drop
-          regex: up
-          sourceLabels:
-            - __name__
-        - action: drop
-          regex: go_.*
-          sourceLabels:
-            - __name__
-        - action: drop
-          regex: process_.*
-          sourceLabels:
-            - __name__
-        - action: replace
-          regex: '^[^.]+\.(.+)\.[^.]+$'
-          replacement: '${1}'
-          sourceLabels:
-            - exported_instance
-          targetLabel: k8s_pod_name
-        - action: replace
-          regex: '.*\.([^.]+)$'
-          replacement: '${1}'
-          sourceLabels:
-            - exported_instance
-          targetLabel: k8s_container_name
-        - action: replace
-          regex: '^([^.]+)\..*'
-          replacement: '${1}'
-          sourceLabels:
-            - exported_instance
-          targetLabel: k8s_namespace_name
+      scrapeTimeout: 25s
+  namespaceSelector:
+    matchNames:
+      - opentelemetry
   selector:
     matchLabels:
-      app.kubernetes.io/component: opentelemetry-collector
       app.kubernetes.io/instance: opentelemetry.otel-agent
-      app.kubernetes.io/managed-by: opentelemetry-operator
-      app.kubernetes.io/name: otel-agent-collector
-      app.kubernetes.io/part-of: opentelemetry
-      operator.opentelemetry.io/collector-service-type: base
