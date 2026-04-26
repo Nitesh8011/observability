@@ -8,62 +8,42 @@ metadata:
 spec:
   config:
     auth:
-      disable_login_form: 'true'
-      disable_signout_menu: 'false'
+      disable_login_form: "true"
+      disable_signout_menu: "false"
       login_maximum_inactive_lifetime_duration: 1h
       login_maximum_lifetime_duration: 8h
-      oauth_auto_login: 'false'
+      oauth_auto_login: "false"
     auth.azuread:
-      enabled: 'true'
-      skip_org_role_update_sync: 'false'
-      client_secret: '$__env{AZURE_CLIENT_SECRET}'
-      allow_sign_up: 'true'
-      token_url: 'https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/token'
-      skip_org_role_sync: 'false'
-      api_url: 'https://graph.microsoft.com/oidc/userinfo'
-      allowed_groups: '98222ff2-5695-4f36-a7b5-6a2e570d3bb2,414d3337-d95e-4d35-b90a-685fa10bcd57,d68f3734-d72f-44a2-9af6-ed1ccedffec5'
+      allow_assign_grafana_admin: "true"
+      allow_sign_up: "true"
+      allowed_groups: 98222ff2-5695-4f36-a7b5-6a2e570d3bb2,414d3337-d95e-4d35-b90a-685fa10bcd57,d68f3734-d72f-44a2-9af6-ed1ccedffec5
+      api_url: https://graph.microsoft.com/oidc/userinfo
+      auth_url: https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/authorize
+      client_id: $__env{AZURE_CLIENT_ID}
+      client_secret: $__env{AZURE_CLIENT_SECRET}
+      enabled: "true"
       name: Azure AD
-      client_id: '$__env{AZURE_CLIENT_ID}'
-      role_attribute_path: 'contains(groups[*], ''98222ff2-5695-4f36-a7b5-6a2e570d3bb2'') && ''Admin'' || contains(groups[*], ''d68f3734-d72f-44a2-9af6-ed1ccedffec5'') && ''Editor'' || contains(groups[*], ''414d3337-d95e-4d35-b90a-685fa10bcd57'') && ''Viewer'' || ''Viewer'''
-      org_mapping: '98222ff2-5695-4f36-a7b5-6a2e570d3bb2:1:Admin d68f3734-d72f-44a2-9af6-ed1ccedffec5:1:Editor 414d3337-d95e-4d35-b90a-685fa10bcd57:1:Viewer'
-      auth_url: 'https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/authorize'
-      allow_assign_grafana_admin: 'true'
+      org_mapping: 98222ff2-5695-4f36-a7b5-6a2e570d3bb2:1:Admin
+        d68f3734-d72f-44a2-9af6-ed1ccedffec5:1:Editor
+        414d3337-d95e-4d35-b90a-685fa10bcd57:1:Viewer
+      role_attribute_path: contains(groups[*], '98222ff2-5695-4f36-a7b5-6a2e570d3bb2')
+        && 'Admin' || contains(groups[*],
+        'd68f3734-d72f-44a2-9af6-ed1ccedffec5') && 'Editor' ||
+        contains(groups[*], '414d3337-d95e-4d35-b90a-685fa10bcd57') && 'Viewer'
+        || 'Viewer'
       scopes: openid email profile
+      skip_org_role_sync: "false"
+      skip_org_role_update_sync: "false"
+      token_url: https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/token
     basic:
-      enabled: 'false'
+      enabled: "false"
     explore:
-      enabled: 'true'
+      enabled: "true"
     server:
-      root_url: 'https://grafana-eks.prospecta.com'
-      serve_from_sub_path: 'false'
+      root_url: https://grafana.prospecta.com
+      serve_from_sub_path: "false"
     session:
-      session_life_time: '3600'
-  ingress:
-    metadata:
-      annotations:
-        kubernetes.io/ingress.class: nginx
-        nginx.ingress.kubernetes.io/ssl-redirect: 'true'
-        nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
-        nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-        nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-        nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
-    spec:
-      ingressClassName: nginx
-      rules:
-        - host: grafana-eks.prospecta.com
-          http:
-            paths:
-              - path: /
-                pathType: Prefix
-                backend:
-                  service:
-                    name: grafana-service
-                    port:
-                      number: 3000
-      tls:
-        - hosts:
-            - grafana-eks.prospecta.com
-          secretName: star-prospecta-com
+      session_life_time: "3600"
   deployment:
     metadata: {}
     spec:
@@ -71,15 +51,41 @@ spec:
         metadata: {}
         spec:
           containers:
-            - name: grafana
-              envFrom:
+            - envFrom:
                 - secretRef:
                     name: grafana-azure-secrets
+              name: grafana
               resources:
                 limits:
-                  cpu: '2'
+                  cpu: "2"
                   memory: 4Gi
                 requests:
                   cpu: 100m
                   memory: 1Gi
-  version: 'docker.io/grafana/grafana:main'
+  ingress:
+    metadata:
+      annotations:
+        kubernetes.io/ingress.class: nginx
+        nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+        nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+        nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    spec:
+      ingressClassName: nginx
+      rules:
+        - host: grafana.prospecta.com
+          http:
+            paths:
+              - backend:
+                  service:
+                    name: grafana-service
+                    port:
+                      number: 3000
+                path: /
+                pathType: Prefix
+      tls:
+        - hosts:
+            - grafana.prospecta.com
+          secretName: star-prospecta-com
+  version: docker.io/grafana/grafana:main
