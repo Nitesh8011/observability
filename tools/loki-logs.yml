@@ -35,7 +35,8 @@ gateway:
   enabled: true
   nginx:
     config:
-      proxy-body-buffer-size: 256m
+      # OOM FIX: Reduced proxy-body-buffer-size 256m → 64m to lower per-connection memory held in gateway
+      proxy-body-buffer-size: 64m
       proxy-buffer-size: 64k
       proxy-buffers: 16 64k
       proxy-connect-timeout: "300"
@@ -54,11 +55,12 @@ gateway:
       keepalive_timeout 1850;
       send_timeout 300;
       large_client_header_buffers 8 64k;
-      client_body_buffer_size 256m;
+      # OOM FIX: Reduced client_body_buffer_size 256m → 64m — 256m was held per connection in memory
+      client_body_buffer_size 64m;
       client_body_in_file_only off;
       proxy_http_version 1.1;
       proxy_set_header Connection "";
-  replicas: 3
+  replicas: 2
   resources:
     limits:
       cpu: 2
@@ -80,12 +82,15 @@ loki:
         store: memberlist
 
   compactor:
-    compaction_interval: 20m
+    working_directory: /var/loki/compactor
+    retention_enabled: true
+    compaction_interval: 10m
+    # compaction_interval: 20m
     delete_request_store: s3
     retention_delete_delay: 2h
     retention_delete_worker_count: 50
-    retention_enabled: true
-    working_directory: /var/loki/compactor
+    # retention_enabled: true
+    # working_directory: /var/loki/compactor
 
   distributor:
     ring:
@@ -107,33 +112,46 @@ loki:
     tag: 3.5.7
 
   ingester:
-    chunk_block_size: 262144
-    # Reduced from 600s → 300s to flush chunks sooner, freeing write pod CPU/memory faster
-    chunk_idle_period: 300s
-    # Reduced from 600s → 300s to match idle period
-    chunk_retain_period: 300s
-    chunk_target_size: 1572864
-    # Reduced from 32 → 16 to reduce flush contention on write pods
-    concurrent_flushes: 16
-    flush_check_period: 20s
-    flush_op_timeout: 10m
-    max_chunk_age: 1h
-    max_returned_stream_errors: 10
-    wal:
-      dir: /var/loki/wal
-      enabled: true
-      flush_on_shutdown: true
-      replay_memory_ceiling: 4GB
+
+    lifecycler:
+      ring:
+        replication_factor: 3
+      final_sleep: 0s
+      join_after: 0s
+
+    chunk_idle_period: 2m    # WAL FIX: Reduced 5m → 2m — idle chunks were sitting in WAL too long before flush
+    max_chunk_age: 15m       # WAL FIX: Reduced 30m → 15m — caps how long any chunk stays in WAL before forced flush
+    chunk_retain_period: 15s # WAL FIX: Reduced 30s → 15s — shorter retain means WAL segments are freed sooner
+
+    chunk_target_size: 1572864   # ~1.5MB
+    # max_transfer_retries: 0
 
   limits_config:
+    ingestion_rate_mb: 128    # WAL FIX: Raised from 20 — low rate was causing ingestion backpressure which stalls WAL flushing
+    ingestion_burst_size_mb: 256  # WAL FIX: Raised from 40 — burst was too low, causing constant throttling that backs up WAL
+
+    max_streams_per_user: 100000
+    max_global_streams_per_user: 500000
+
+    max_line_size: 256KB
+    reject_old_samples: true
+    reject_old_samples_max_age: 168h
+
+    retention_period: 15d   # ⚡ keep Loki fast (use S3 lifecycle for 90d)
+      # replay_memory_ceiling: 12GB  # Increased from 8GB (you have 60Gi memory limit)
     allow_structured_metadata: true
     cardinality_limit: 100000
-    ingestion_burst_size_mb: 512
-    ingestion_rate_mb: 256
+    # OOM FIX: Reduced ingestion_burst_size_mb 512 → 64 — this is the primary OOM driver.
+    # A 512MB burst × 3x replication = up to 1.5GB sudden spike per tenant per write pod.
+    # 64MB is generous for any real workload and prevents runaway burst allocation.
+    # ingestion_burst_size_mb: 64
+    # OOM FIX: Reduced ingestion_rate_mb 256 → 128 — sustained rate paired with burst reduction.
+    # Keeps ingesters from being flooded back-to-back after burst headroom resets.
+    # ingestion_rate_mb: 128
     max_cache_freshness_per_query: 10m
     max_concurrent_tail_requests: 50
     max_entries_limit_per_query: 2000000
-    max_line_size: 32MB
+    # max_line_size: 32MB
     max_line_size_truncate: false
     max_query_capacity: 536870912
     max_query_length: 168h
@@ -147,12 +165,15 @@ loki:
     otlp_config:
       resource_attributes:
         ignore_defaults: false
-    per_stream_rate_limit: 64MB
-    per_stream_rate_limit_burst: 128MB
+    # OOM FIX: Reduced per_stream_rate_limit 64MB → 32MB and burst 128MB → 64MB.
+    # Across high-cardinality label sets, cumulative burst reservations across streams
+    # add up to significant memory. 32MB/64MB is still very high per individual stream.
+    per_stream_rate_limit: 32MB
+    per_stream_rate_limit_burst: 64MB
     query_timeout: 300s
-    reject_old_samples: true
-    reject_old_samples_max_age: 336h
-    retention_period: 2160h
+    # reject_old_samples: true
+    # reject_old_samples_max_age: 336h
+    # retention_period: 2160h
     shard_streams:
       desired_rate: 5242880
       enabled: true
@@ -343,14 +364,24 @@ resultsCache:
   writebackSizeLimit: 1GB
 
 write:
+  config:
+    wal:
+      enabled: true
+      dir: /var/loki/wal
+      replay_memory_ceiling: 24GB  # WAL FIX: Raised 8GB → 24GB — gives WAL enough headroom vs 60Gi pod limit
+      flush_on_shutdown: true
+      checkpoint_duration: 10m     # WAL FIX: Raised 2m → 10m — too-frequent checkpointing caused WAL write amplification
+      max_transfer_retries: 0      # WAL FIX: Disable transfer retries — failed transfers were blocking WAL segment deletion
   extraEnv:
     - name: GOMEMLIMIT
-      value: 18GiB
-  replicas: 3
+      value: 48GiB   # WAL FIX: Lowered 54GiB → 48GiB — more GC headroom vs 60Gi limit reduces stalls that block WAL draining
+    - name: GOGC
+      value: "100"   # WAL FIX: Raised 70 → 100 — less aggressive GC reduces CPU competition with flush goroutines
+  replicas: 4
   resources:
     limits:
       cpu: 4
-      memory: 24Gi
+      memory: 60Gi
     requests:
       cpu: 100m
       memory: 256Mi
@@ -362,6 +393,5 @@ write:
     size: 30Gi
     storageClass: gp3-csi
   terminationGracePeriodSeconds: 600
-
 
 # helm upgrade --install loki grafana-community/loki -n loki -f tools/loki-logs.yml

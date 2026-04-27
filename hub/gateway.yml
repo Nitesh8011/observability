@@ -19,8 +19,14 @@ spec:
           max_interval: 30s
         sending_queue:
           enabled: true
-          num_consumers: 8
-          queue_size: 50000
+          # OOM FIX: Reduced num_consumers 8 → 4 — fewer goroutines draining the queue
+          # concurrently means write pods receive a steadier, less bursty stream.
+          # 8 consumers could fan out 8 × 2048-entry batches simultaneously into ingesters.
+          num_consumers: 4
+          # OOM FIX: Reduced queue_size 50000 → 10000 — a 50k queue draining after backpressure
+          # releases floods all write pods at once, causing coordinated memory spikes.
+          # 10k is still a large buffer (~10s of headroom at typical log rates).
+          queue_size: 10000
         timeout: 120s
       otlphttp/mimir:
         endpoint: http://mimir-gateway.mimir:8080/otlp
@@ -55,8 +61,11 @@ spec:
         path: /
     processors:
       batch/logs:
-        send_batch_max_size: 2048
-        send_batch_size: 1024
+        # OOM FIX: Reduced send_batch_max_size 2048 → 1024 and send_batch_size 1024 → 512.
+        # Large batch sizes cause ingesters to allocate a large contiguous buffer per request.
+        # Smaller batches spread memory allocation more evenly over time.
+        send_batch_max_size: 1024
+        send_batch_size: 512
         timeout: 10s
       batch/metrics:
         send_batch_max_size: 2048
