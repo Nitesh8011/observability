@@ -119,12 +119,20 @@ loki:
       final_sleep: 0s
       join_after: 0s
 
-    chunk_idle_period: 2m    # WAL FIX: Reduced 5m → 2m — idle chunks were sitting in WAL too long before flush
-    max_chunk_age: 15m       # WAL FIX: Reduced 30m → 15m — caps how long any chunk stays in WAL before forced flush
-    chunk_retain_period: 15s # WAL FIX: Reduced 30s → 15s — shorter retain means WAL segments are freed sooner
-
+    chunk_idle_period: 2m
+    max_chunk_age: 15m
+    chunk_retain_period: 15s
     chunk_target_size: 1572864   # ~1.5MB
     # max_transfer_retries: 0
+
+    # OOM FIX: WAL config must live here under ingester — write.config.wal block is ignored by Loki
+    # Without replay_memory_ceiling, WAL replay on every pod restart spikes unbounded -> OOM -> crash loop
+    wal:
+      enabled: true
+      dir: /var/loki/wal
+      flush_on_shutdown: true
+      replay_memory_ceiling: 8GB   # Caps replay spike well under 60Gi pod limit
+      checkpoint_duration: 10m
 
   limits_config:
     ingestion_rate_mb: 128    # WAL FIX: Raised from 20 — low rate was causing ingestion backpressure which stalls WAL flushing
@@ -183,7 +191,7 @@ loki:
     unordered_writes: true
 
   livenessProbe:
-    failureThreshold: 6
+    failureThreshold: 300
     httpGet:
       path: /ready
       port: http-metrics
@@ -364,27 +372,20 @@ resultsCache:
   writebackSizeLimit: 1GB
 
 write:
-  config:
-    wal:
-      enabled: true
-      dir: /var/loki/wal
-      replay_memory_ceiling: 24GB  # WAL FIX: Raised 8GB → 24GB — gives WAL enough headroom vs 60Gi pod limit
-      flush_on_shutdown: true
-      checkpoint_duration: 10m     # WAL FIX: Raised 2m → 10m — too-frequent checkpointing caused WAL write amplification
-      max_transfer_retries: 0      # WAL FIX: Disable transfer retries — failed transfers were blocking WAL segment deletion
+  # NOTE: WAL config must go under loki.ingester.wal — write.config.wal is not read by Loki
   extraEnv:
     - name: GOMEMLIMIT
-      value: 48GiB   # WAL FIX: Lowered 54GiB → 48GiB — more GC headroom vs 60Gi limit reduces stalls that block WAL draining
+      value: 28GiB   # OOM FIX: Lowered from 48GiB — gives Go GC 20Gi headroom vs 60Gi limit to absorb WAL replay spikes
     - name: GOGC
-      value: "100"   # WAL FIX: Raised 70 → 100 — less aggressive GC reduces CPU competition with flush goroutines
+      value: "100"
   replicas: 4
   resources:
     limits:
-      cpu: 4
-      memory: 60Gi
+      cpu: '6'
+      memory: 34Gi
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu: '1'
+      memory: 24Gi
   persistence:
     volumeClaimsEnabled: true
     accessModes:

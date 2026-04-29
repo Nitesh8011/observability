@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: pyroscope-ingress
+  namespace: pyroscope
+  annotations:
+    nginx.ingress.kubernetes.io/auth-tls-secret: pyroscope/pyroscope-tls
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - pyroscope-hub.prospecta.com
+      secretName: pyroscope-tls
+  rules:
+    - host: pyroscope-hub.prospecta.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: pyroscope
+                port:
+                  number: 4040
+# status:
+#   loadBalancer:
+#     ingress:
+#       - hostname: k8s-ingressn-nginxing-ca70f5125e-6edb8764b3222aed.elb.ap-southeast-2.amazonaws.com

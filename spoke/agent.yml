@@ -25,8 +25,8 @@ spec:
           max_interval: 30s
         sending_queue:
           enabled: true
-          num_consumers: 2
-          queue_size: 500
+          num_consumers: 8
+          queue_size: 1000
         timeout: 30s
         tls:
           ca_file: /client-ca/ca.crt
@@ -38,15 +38,10 @@ spec:
         endpoint: '0.0.0.0:13133'
         path: /
     processors:
-      attributes:
-        actions:
-          - action: extract
-            key: instance
-            pattern: '^(?P<k8s_namespace_name>[^.]+)\.(?P<k8s_pod_name>[^.]+)\.(?P<k8s_container_name>.+)$'
       batch:
-        send_batch_max_size: 1024
-        send_batch_size: 512
-        timeout: 10s
+        send_batch_max_size: 4096
+        send_batch_size: 2048
+        timeout: 30s
       filter:
         metrics:
           exclude:
@@ -67,6 +62,11 @@ spec:
               - queueSize_ratio
               - processedLogs_total
               - processedSpans_total
+      filter/drop_long_logs:
+        error_mode: ignore
+        logs:
+          log_record:
+            - Len(body) > 500
       k8sattributes:
         auth_type: serviceAccount
         extract:
@@ -93,7 +93,71 @@ spec:
         attributes:
           - action: insert
             key: cluster.name
-            value: onprem
+            value: ohio
+      resource/cleanup:
+        attributes:
+          - action: delete
+            key: k8s.pod.name
+          - action: delete
+            key: k8s.replicaset.uid
+          - action: delete
+            key: k8s.pod.uid
+          - action: delete
+            key: telemetry.sdk.name
+          - action: delete
+            key: telemetry.sdk.language
+          - action: delete
+            key: telemetry.sdk.version
+          - action: delete
+            key: telemetry.auto.version
+          - action: delete
+            key: telemetry.distro.name
+          - action: delete
+            key: telemetry.distro.version
+          - action: delete
+            key: process.pid
+          - action: delete
+            key: process.executable.path
+          - action: delete
+            key: process.command_line
+          - action: delete
+            key: process.command_args
+          - action: delete
+            key: process.runtime.name
+          - action: delete
+            key: process.runtime.version
+          - action: delete
+            key: process.runtime.description
+          - action: delete
+            key: host.name
+          - action: delete
+            key: host.arch
+          - action: delete
+            key: os.type
+          - action: delete
+            key: os.description
+          - action: delete
+            key: container.id
+          - action: delete
+            key: k8s.pod.ip
+          - action: delete
+            key: k8s.node.name
+          - action: delete
+            key: k8s.container.name
+          - action: delete
+            key: k8s.replicaset.name
+          - action: delete
+            key: k8s.statefulset.name
+          - action: delete
+            key: k8s.daemonset.name
+          - action: delete
+            key: service.instance.id
+          - action: delete
+            key: service.version
+          - action: delete
+            key: severity_number
+          - action: delete
+            key: severity_text
     receivers:
       hostmetrics:
         collection_interval: 30s
@@ -134,7 +198,9 @@ spec:
           processors:
             - memory_limiter
             - k8sattributes
+            - resource/cleanup
             - resource
+            - filter/drop_long_logs
             - batch
           receivers:
             - otlp
@@ -144,7 +210,7 @@ spec:
           processors:
             - memory_limiter
             - k8sattributes
-            - attributes
+            - resource/cleanup
             - resource
             - filter
             - batch
@@ -159,6 +225,7 @@ spec:
           processors:
             - memory_limiter
             - k8sattributes
+            - resource/cleanup
             - resource
             - batch
           receivers:
@@ -237,11 +304,11 @@ spec:
       serviceMonitorSelector:
         matchLabels:
           prometheus: grafana
-    replicas: 3
+    replicas: 5
     collectorNotReadyGracePeriod: 30s
     collectorTargetReloadInterval: 30s
   image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.149.0'
-  replicas: 3
+  replicas: 5
   ipFamilyPolicy: SingleStack
   configVersions: 3
   podAnnotations:

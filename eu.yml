@@ -1,0 +1,185 @@
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: daxe-exec-service
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: daxe-exec-service
+      annotations:
+        instrumentation.opentelemetry.io/inject-java: fuse-eu-agent-instrumentation
+        keel.sh/update-time: 2026-04-28 10:25:24.061619586 +0000 UTC m=+792905.275268821
+        kubectl.kubernetes.io/restartedAt: '2026-04-19T09:09:14Z'
+    spec:
+      containers:
+        - name: daxe-exec-service
+          image: docker.prospecta.com/prospecta/daxe-exec-service:production
+          envFrom:
+            - configMapRef:
+                name: config-elastic
+            - configMapRef:
+                name: config-grpc
+            - configMapRef:
+                name: config-http-private
+            - configMapRef:
+                name: config-http-public
+            - configMapRef:
+                name: config-jdbc
+            - configMapRef:
+                name: config-rmq
+            - configMapRef:
+                name: config-virtual
+            - configMapRef:
+                name: config-fixme
+            - configMapRef:
+                name: es-daxe-exec-service-cm
+            - configMapRef:
+                name: graceful-shutdown
+            - configMapRef:
+                name: mdo-auth-retry
+            - configMapRef:
+                name: dms-starter-cm
+            - configMapRef:
+                name: env-dms-starter-cm
+          env:
+            - name: my-pod-name
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: metadata.name
+            - name: spring.datasource.password
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: SPRING_DATASOURCE_PASSWD
+            - name: mdo.config.jwt_rsk
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: MDO_CONFIG_JWT_RSK
+            - name: mdo.auth.rsk
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: MDO_CONFIG_JWT_RSK
+            - name: spring.rabbitmq.password
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: SPRING_RABBITMQ_PASSWD
+            - name: mdo.mainES.password
+              valueFrom:
+                secretKeyRef:
+                  name: esmain-es-internal-users
+                  key: elastic-internal
+            - name: mdo.diwES.password
+              valueFrom:
+                secretKeyRef:
+                  name: esdiw-es-internal-users
+                  key: elastic-internal
+            - name: spring.datasource.dms.password
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: SPRING_DATASOURCE_PASSWD
+            - name: mdo.config.dms.store.connekthub.accessKey
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: CONNEKTHUB_AWS_ACCESS_KEY
+            - name: mdo.config.dms.store.azure.connection-string
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: DMS_BLOB_CONNECTION_STRING
+            - name: mdo.config.dms.store.connekthub.secretAccessKey
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: CONNEKTHUB_AWS_SECRET_KEY
+            - name: library.token
+              valueFrom:
+                secretKeyRef:
+                  name: mdo-secrets
+                  key: LIBRARY_TOKEN
+            - name: spring.datasource.hikari.maximum-pool-size
+              value: '40'
+            - name: JAVA_TOOL_OPTIONS
+              value: >-
+                -Xms10G -Xmx10G -XX:ThreadStackSize=512
+                -XX:ActiveProcessorCount=1 -XX:+AlwaysPreTouch
+                -Xlog:gc*,gc+phases=debug,gc+task=debug,safepoint,gc+heap=info,gc+cpu=info:stdout:time,uptime,level,tags
+          resources:
+            limits:
+              memory: 14Gi
+            requests:
+              cpu: '1'
+              memory: 12Gi
+          livenessProbe:
+            httpGet:
+              path: /daxe/actuator/health/liveness
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 90
+            successThreshold: 1
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /daxe/actuator/health/readiness
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 90
+            successThreshold: 2
+            failureThreshold: 5
+          startupProbe:
+            httpGet:
+              path: /daxe/actuator/health/readiness
+              port: 8080
+              scheme: HTTP
+            timeoutSeconds: 5
+            periodSeconds: 60
+            successThreshold: 1
+            failureThreshold: 20
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - '-c'
+                  - sleep 10
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+          securityContext:
+            capabilities:
+              add:
+                - ALL
+            privileged: true
+            runAsUser: 0
+            runAsGroup: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: true
+            seccompProfile:
+              type: Unconfined
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      serviceAccountName: mdo
+      serviceAccount: mdo
+      securityContext: {}
+      imagePullSecrets:
+        - name: nexus-image-pull
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
