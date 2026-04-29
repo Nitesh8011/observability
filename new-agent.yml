@@ -1,0 +1,79 @@
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: otel-agent
+  namespace: opentelemetry
+spec:
+  mode: deployment
+
+  config:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+          http:
+
+    processors:
+      batch:
+
+      transform:
+        metric_statements:
+          - context: datapoint
+            statements:
+
+              # Extract pod
+              - set(attributes["pod"], RegexReplaceAll(attributes["exported_instance"], "^[^.]+\\.(.+)\\.[^.]+$", "$1"))
+
+              # Extract app
+              - set(attributes["app"], RegexReplaceAll(attributes["exported_instance"], ".*\\.([^.]+)$", "$1"))
+
+              # Extract namespace
+              - set(attributes["namespace"], RegexReplaceAll(attributes["exported_instance"], "^([^.]+)\\..*", "$1"))
+
+      attributes/drop_labels:
+        actions:
+          - action: delete
+            key: exported_instance
+          - action: delete
+            key: exported_job
+          - action: delete
+            key: cluster
+          - action: delete
+            key: container
+          - action: delete
+            key: endpoint
+          - action: delete
+            key: environment
+          - action: delete
+            key: instance
+          - action: delete
+            key: job
+          - action: delete
+            key: service
+          - action: delete
+            key: otel_scope_name
+          - action: delete
+            key: otel_scope_version
+
+    exporters:
+
+      # Debug (VERY useful initially)
+      logging:
+        loglevel: debug
+
+      # Keep this if you still want /metrics exposure
+      prometheus:
+        endpoint: "0.0.0.0:8889"
+
+      # Example: send to another backend (optional)
+      otlp:
+        endpoint: "tempo:4317"
+        tls:
+          insecure: true
+
+    service:
+      pipelines:
+        metrics:
+          receivers: [otlp]
+          processors: [transform, attributes/drop_labels, batch]
+          exporters: [logging, prometheus]
