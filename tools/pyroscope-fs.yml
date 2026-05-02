@@ -1,0 +1,334 @@
+# =============================================================================
+# Pyroscope — Production Distributed (Microservices) Helm Values
+# Backend: MinIO (in-cluster S3-compatible)
+# Namespace: pyroscope-ms
+#
+# Install:
+#   helm upgrade --install pyroscope grafana/pyroscope \
+#     --namespace pyroscope-ms \
+#     --create-namespace \
+#     -f tools/pyroscope-fs.yml
+# =============================================================================
+
+image:
+  registry: docker.io
+  repository: grafana/pyroscope
+  tag: "1.18.0"
+  pullPolicy: IfNotPresent
+
+# ---------------------------------------------------------------------------
+# MinIO — in-cluster S3-compatible object store
+# ---------------------------------------------------------------------------
+minio:
+  enabled: true
+  mode: standalone
+  persistence:
+    enabled: true
+    size: 600Gi
+    storageClass: gp3-csi
+  buckets:
+    - name: pyroscope-profiles
+      policy: none
+      purge: false
+  rootUser: pyroscope
+  rootPassword: oqckegiubclkzy5n2j3t
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+# ---------------------------------------------------------------------------
+# Pyroscope Core Configuration
+# ---------------------------------------------------------------------------
+pyroscope:
+  # Use raw config string — avoids structuredConfig YAML rendering issues
+  # with env var substitution and port conflicts
+  config: |
+    server:
+      http_listen_port: 4040
+
+    memberlist:
+      bind_addr:
+        - "0.0.0.0"
+      advertise_addr: ${POD_IP}
+      abort_if_cluster_join_fails: false
+      join_members:
+        - pyroscope-memberlist.pyroscope-ms.svc.cluster.local:7946
+
+    storage:
+      backend: s3
+      s3:
+        bucket_name: pyroscope-profiles
+        endpoint: pyroscope-minio.pyroscope-ms.svc.cluster.local:9000
+        region: ap-southeast-2
+        access_key_id: pyroscope
+        secret_access_key: oqckegiubclkzy5n2j3t
+        insecure: true
+
+    ingester:
+      lifecycler:
+        interface_names: ["eth0"]
+        ring:
+          kvstore:
+            store: memberlist
+          replication_factor: 3
+
+    distributor:
+      ring:
+        kvstore:
+          store: memberlist
+        instance_interface_names: ["eth0"]
+
+    store_gateway:
+      sharding_ring:
+        replication_factor: 3
+        kvstore:
+          store: memberlist
+        instance_interface_names: ["eth0"]
+
+    compactor:
+      sharding_ring:
+        kvstore:
+          store: memberlist
+        instance_interface_names: ["eth0"]
+
+    limits:
+      ingestion_rate_mb: 64
+      ingestion_burst_size_mb: 128
+      max_query_lookback: 0s
+
+  # POD_IP injected via downward API — expanded into memberlist advertise_addr
+  extraEnvVars:
+    POD_IP:
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
+
+  extraArgs:
+    config.expand-env: "true"
+    store-gateway.sharding-ring.replication-factor: "3"
+    log.level: info
+
+  # ---------------------------------------------------------------------------
+  # Components
+  # ---------------------------------------------------------------------------
+  components:
+
+    distributor:
+      kind: Deployment
+      replicaCount: 3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 2Gi
+      podAntiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/component: distributor
+              topologyKey: kubernetes.io/hostname
+
+    ingester:
+      kind: StatefulSet
+      replicaCount: 3
+      terminationGracePeriodSeconds: 600
+      persistence:
+        enabled: true
+        storageClassName: gp3-csi
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 500m
+          memory: 256Mi
+        limits:
+          cpu: "4"
+          memory: 16Gi
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                app.kubernetes.io/component: ingester
+            topologyKey: kubernetes.io/hostname
+
+    compactor:
+      kind: StatefulSet
+      replicaCount: 3
+      terminationGracePeriodSeconds: 1200
+      persistence:
+        enabled: true
+        storageClassName: gp3-csi
+        size: 50Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "4"
+          memory: 16Gi
+
+    store-gateway:
+      kind: StatefulSet
+      replicaCount: 3
+      persistence:
+        enabled: true
+        storageClassName: gp3-csi
+        size: 10Gi
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "4"
+          memory: 8Gi
+      readinessProbe:
+        initialDelaySeconds: 60
+
+    querier:
+      kind: Deployment
+      replicaCount: 3
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "4"
+          memory: 4Gi
+
+    query-frontend:
+      kind: Deployment
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 256Mi
+        limits:
+          cpu: "2"
+          memory: 1Gi
+
+    query-scheduler:
+      kind: Deployment
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 128Mi
+        limits:
+          cpu: "1"
+          memory: 512Mi
+
+    tenant-settings:
+      kind: Deployment
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
+    ad-hoc-profiles:
+      kind: Deployment
+      replicaCount: 2
+      resources:
+        requests:
+          cpu: 100m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
+# ---------------------------------------------------------------------------
+# Service Account
+# ---------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  annotations: {}
+
+# ---------------------------------------------------------------------------
+# Ingress
+# ---------------------------------------------------------------------------
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    kubernetes.io/ingress-class: nginx
+    nginx.ingress.kubernetes.io/backend-protocol: HTTP
+    nginx.ingress.kubernetes.io/proxy-body-size: 50m
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/auth-tls-secret: pyroscope/pyroscope-tls
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
+  hosts:
+    - pyroscope-hub.prospecta.com
+  tls:
+    - secretName: pyroscope-tls
+      hosts:
+        - pyroscope-hub.prospecta.com
+
+# ---------------------------------------------------------------------------
+# Monitoring
+# ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}
+
+# ---------------------------------------------------------------------------
+# Pod Disruption Budgets
+# ---------------------------------------------------------------------------
+extraObjects:
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: pyroscope-ingester-pdb
+    spec:
+      minAvailable: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: ingester
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: pyroscope-store-gateway-pdb
+    spec:
+      minAvailable: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: store-gateway
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: pyroscope-compactor-pdb
+    spec:
+      minAvailable: 1
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: compactor
+
+  - apiVersion: policy/v1
+    kind: PodDisruptionBudget
+    metadata:
+      name: pyroscope-querier-pdb
+    spec:
+      minAvailable: 2
+      selector:
+        matchLabels:
+          app.kubernetes.io/component: querier
+
+alloy:
+  enabled: false
+
+grafana:
+  enabled: false
