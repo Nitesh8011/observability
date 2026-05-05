@@ -7,6 +7,10 @@ spec:
     endpoint: 'http://otel-agent-collector.opentelemetry:4318'
   java:
     env:
+      - name: JAVA_TOOL_OPTIONS
+        value: >-
+          -Xlog:gc*::time,uptime,level,tags
+          -Xlog:safepoint::time,uptime,level,tags
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: 'http://otel-agent-collector.opentelemetry:4318'
       - name: OTEL_EXPORTER_OTLP_PROTOCOL

@@ -1,4 +1,11 @@
 backend:
+  persistence:
+    accessModes:
+    - ReadWriteOnce
+    enableStatefulSetAutoDeletePVC: true
+    size: 10Gi
+    storageClass: gp3-csi
+    volumeClaimsEnabled: true
   replicas: 3
   resources:
     limits:
@@ -7,35 +14,23 @@ backend:
     requests:
       cpu: 100m
       memory: 256Mi
-  persistence:
-    volumeClaimsEnabled: true
-    accessModes:
-      - ReadWriteOnce
-    enableStatefulSetAutoDeletePVC: true
-    size: 10Gi
-    storageClass: gp3-csi
-
 chunksCache:
   args:
-    - -I 256m
-  # Increased batchSize from 8 → 32 to reduce S3 round trips
+  - -I 256m
   batchSize: 32
   defaultValidity: 1h
   enabled: true
   parallelism: 10
-  # Increased timeout from 3000ms → 10000ms to tolerate S3 latency spikes
   timeout: 10000ms
   writebackBuffer: 1000000
   writebackParallelism: 4
   writebackSizeLimit: 1GB
-
 deploymentMode: SimpleScalable
-
 gateway:
   enabled: true
   nginx:
     config:
-      proxy-body-buffer-size: 256m
+      proxy-body-buffer-size: 64m
       proxy-buffer-size: 64k
       proxy-buffers: 16 64k
       proxy-connect-timeout: "300"
@@ -54,11 +49,12 @@ gateway:
       keepalive_timeout 1850;
       send_timeout 300;
       large_client_header_buffers 8 64k;
-      client_body_buffer_size 256m;
+      # OOM FIX: Reduced client_body_buffer_size 256m → 64m — 256m was held per connection in memory
+      client_body_buffer_size 64m;
       client_body_in_file_only off;
       proxy_http_version 1.1;
       proxy_set_header Connection "";
-  replicas: 3
+  replicas: 2
   resources:
     limits:
       cpu: 2
@@ -69,7 +65,6 @@ gateway:
   service:
     port: 80
     type: ClusterIP
-
 loki:
   auth_enabled: false
   commonConfig:
@@ -78,107 +73,95 @@ loki:
     ring:
       kvstore:
         store: memberlist
-
   compactor:
-    compaction_interval: 20m
+    compaction_interval: 10m
     delete_request_store: s3
     retention_delete_delay: 2h
     retention_delete_worker_count: 50
     retention_enabled: true
     working_directory: /var/loki/compactor
-
   distributor:
     ring:
       kvstore:
         store: memberlist
-
   frontend:
     compress_responses: true
     log_queries_longer_than: 30s
     max_outstanding_per_tenant: 512
-
   frontend_worker:
     grpc_client_config:
       max_recv_msg_size: 536870912
       max_send_msg_size: 536870912
-
   image:
     repository: grafana/loki
     tag: 3.5.7
-
   ingester:
-    chunk_block_size: 262144
-    # Reduced from 600s → 300s to flush chunks sooner, freeing write pod CPU/memory faster
-    chunk_idle_period: 300s
-    # Reduced from 600s → 300s to match idle period
-    chunk_retain_period: 300s
+    chunk_idle_period: 1m
+    chunk_retain_period: 15s
     chunk_target_size: 1572864
-    # Reduced from 32 → 16 to reduce flush contention on write pods
-    concurrent_flushes: 16
-    flush_check_period: 20s
-    flush_op_timeout: 10m
-    max_chunk_age: 1h
-    max_returned_stream_errors: 10
+    lifecycler:
+      final_sleep: 0s
+      join_after: 0s
+      ring:
+        replication_factor: 3
+    max_chunk_age: 5m
     wal:
+      checkpoint_duration: 5m
       dir: /var/loki/wal
       enabled: true
       flush_on_shutdown: true
-      replay_memory_ceiling: 4GB
-
+      replay_memory_ceiling: 8GB
   limits_config:
     allow_structured_metadata: true
     cardinality_limit: 100000
-    ingestion_burst_size_mb: 512
-    ingestion_rate_mb: 256
+    ingestion_burst_size_mb: 256
+    ingestion_rate_mb: 128
     max_cache_freshness_per_query: 10m
     max_concurrent_tail_requests: 50
     max_entries_limit_per_query: 2000000
-    max_line_size: 32MB
+    max_global_streams_per_user: 500000
+    max_line_size: 256KB
     max_line_size_truncate: false
     max_query_capacity: 536870912
     max_query_length: 168h
     max_query_lookback: 0
-    max_query_parallelism: 32
+    max_query_parallelism: 24
     max_query_series: 5000
     max_streams_matchers_per_query: 10000
+    max_streams_per_user: 100000
     max_structured_metadata_entries_count: 128
     max_structured_metadata_size: 512KB
     min_sharding_lookback: 0s
     otlp_config:
       resource_attributes:
         ignore_defaults: false
-    per_stream_rate_limit: 64MB
-    per_stream_rate_limit_burst: 128MB
+    per_stream_rate_limit: 32MB
+    per_stream_rate_limit_burst: 64MB
     query_timeout: 300s
     reject_old_samples: true
-    reject_old_samples_max_age: 336h
-    retention_period: 2160h
+    reject_old_samples_max_age: 168h
+    retention_period: 15d
     shard_streams:
       desired_rate: 5242880
       enabled: true
       logging_enabled: true
-    # Reduced from 1d → 6h: finer splits give more parallelism across read pods
-    split_queries_by_interval: 6h
+    split_queries_by_interval: 24h
     unordered_writes: true
-
   livenessProbe:
-    failureThreshold: 6
+    failureThreshold: 300
     httpGet:
       path: /ready
       port: http-metrics
     initialDelaySeconds: 120
     periodSeconds: 15
     timeoutSeconds: 10
-
   pattern_ingester:
     enabled: true
-
   querier:
     engine:
       max_look_back_period: 0
-    max_concurrent: 32
+    max_concurrent: 16
     query_ingesters_within: 1h
-
   query_range:
     align_queries_with_step: true
     cache_results: true
@@ -187,12 +170,9 @@ loki:
       cache:
         embedded_cache:
           enabled: true
-          # Increased from 512MB → 1024MB for better cache hit rate on repeated queries
           max_size_mb: 1024
-
   query_scheduler:
     max_outstanding_requests_per_tenant: 512
-
   readinessProbe:
     failureThreshold: 6
     httpGet:
@@ -202,7 +182,6 @@ loki:
     periodSeconds: 15
     successThreshold: 1
     timeoutSeconds: 10
-
   resources:
     limits:
       cpu: 4
@@ -210,17 +189,15 @@ loki:
     requests:
       cpu: 100m
       memory: 256Mi
-
   schemaConfig:
     configs:
-      - from: "2024-04-01"
-        index:
-          period: 24h
-          prefix: loki_index_
-        object_store: s3
-        schema: v13
-        store: tsdb
-
+    - from: "2024-04-01"
+      index:
+        period: 24h
+        prefix: loki_index_
+      object_store: s3
+      schema: v13
+      store: tsdb
   server:
     grpc_listen_port: 9095
     grpc_server_keepalive_time: 30s
@@ -231,13 +208,9 @@ loki:
     http_server_idle_timeout: 1850s
     http_server_read_timeout: 300s
     http_server_write_timeout: 300s
-
   serviceAccount:
-    # annotations:
-    #   eks.amazonaws.com/role-arn: arn:aws:iam::597088041925:role/opentelemetry-logs-roles
     create: true
     name: loki
-
   storage:
     bucketNames:
       admin: otel-logs-597088041925-ap-southeast-2-an
@@ -251,40 +224,33 @@ loki:
       region: ap-southeast-2
       s3ForcePathStyle: false
     type: s3
-
   storage_config:
     hedging:
-      # Increased from 250ms → 500ms — reduces duplicate S3 requests under normal load
       at: 500ms
       max_per_second: 20
-      # Reduced from 3 → 2 — less aggressive hedging, fewer wasted S3 requests
       up_to: 2
     tsdb_shipper:
       active_index_directory: /var/loki/tsdb-index
       cache_location: /var/loki/tsdb-cache
       cache_ttl: 24h
       resync_interval: 5m
-
 lokiCanary:
   enabled: true
-
 memcached:
   enabled: true
   extraArgs:
-    - -I 512m
-    - -m 1536
+  - -I 512m
+  - -m 4096
   replicas: 3
   resources:
     limits:
       cpu: 1
-      memory: 2Gi
+      memory: 5Gi
     requests:
       cpu: 100m
-      memory: 256Mi
-
+      memory: 2Gi
 minio:
   enabled: false
-
 monitoring:
   dashboards:
     enabled: false
@@ -296,72 +262,66 @@ monitoring:
       installOperator: false
   serviceMonitor:
     enabled: false
-
 read:
+  affinity: {}
   extraEnv:
-    - name: GOMEMLIMIT
-      value: 9GiB
-  # KEY FIX: HPA was disabled before — 3 static read pods were the primary bottleneck.
-  # Enabling this allows the cluster to scale up read pods under query load.
+  - name: GOMEMLIMIT
+    value: 16GiB
   horizontalPodAutoscaler:
-    enabled: true
+    enabled: false
     maxReplicas: 6
     metrics:
-      - resource:
-          name: cpu
-          target:
-            averageUtilization: 70
-            type: Utilization
-        type: Resource
-      - resource:
-          name: memory
-          target:
-            averageUtilization: 75
-            type: Utilization
-        type: Resource
-    # Raised minReplicas from 3 → 6 so there is always enough read capacity
-    minReplicas: 3
-  # Keep static replicas at 6 to match HPA minReplicas on initial deploy
-  replicas: 3
+    - resource:
+        name: cpu
+        target:
+          averageUtilization: 70
+          type: Utilization
+      type: Resource
+    - resource:
+        name: memory
+        target:
+          averageUtilization: 75
+          type: Utilization
+      type: Resource
+    minReplicas: 4
+  podAntiAffinity: none
+  replicas: 4
   resources:
     limits:
-      cpu: 8
-      memory: 12Gi
+      memory: 24Gi
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 8Gi
   terminationGracePeriodSeconds: 120
-
+  topologySpreadConstraints: []
 resultsCache:
   args:
-    - -I 512m
+  - -I 512m
   defaultValidity: 24h
   enabled: true
   timeout: 1000ms
   writebackBuffer: 1000000
   writebackParallelism: 2
   writebackSizeLimit: 1GB
-
 write:
   extraEnv:
-    - name: GOMEMLIMIT
-      value: 18GiB
-  replicas: 3
-  resources:
-    limits:
-      cpu: 4
-      memory: 24Gi
-    requests:
-      cpu: 100m
-      memory: 256Mi
+  - name: GOMEMLIMIT
+    value: 28GiB
+  - name: GOGC
+    value: "100"
   persistence:
-    volumeClaimsEnabled: true
     accessModes:
-      - ReadWriteOnce
+    - ReadWriteOnce
     enableStatefulSetAutoDeletePVC: true
     size: 30Gi
     storageClass: gp3-csi
+    volumeClaimsEnabled: true
+  replicas: 4
+  resources:
+    limits:
+      memory: 34Gi
+    requests:
+      memory: 24Gi
   terminationGracePeriodSeconds: 600
-
 
 # helm upgrade --install loki grafana-community/loki -n loki -f tools/loki-logs.yml

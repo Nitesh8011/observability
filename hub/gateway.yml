@@ -35,8 +35,21 @@ spec:
           queue_size: 10000
         tls:
           insecure: true
-      otlphttp/tempo:
-        endpoint: http://tempo-gateway.tempo
+      otlphttp/mimir-ms:
+        endpoint: http://mimir-gateway.mimir-ms:8080/otlp
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 300s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 5
+          queue_size: 10000
+        tls:
+          insecure: true
+      otlphttp/tempo-ms:
+        endpoint: http://tempo-gateway.tempo-ms
         retry_on_failure:
           enabled: true
           initial_interval: 5s
@@ -59,13 +72,21 @@ spec:
         send_batch_size: 1024
         timeout: 10s
       batch/metrics:
-        send_batch_max_size: 2048
-        send_batch_size: 1024
+        send_batch_max_size: 512
+        send_batch_size: 256
         timeout: 10s
       batch/traces:
         send_batch_max_size: 1024
         send_batch_size: 512
         timeout: 5s
+      k8sattributes:
+        auth_type: serviceAccount
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.namespace.name
+            - k8s.node.name
+        passthrough: true
       memory_limiter:
         check_interval: 2s
         limit_mib: 4096
@@ -105,15 +126,17 @@ spec:
             - otlp
         metrics:
           exporters:
-            - otlphttp/mimir
+            # - otlphttp/mimir
+            - otlphttp/mimir-ms
           processors:
             - memory_limiter
+            - k8sattributes
             - batch/metrics
           receivers:
             - otlp
         traces:
           exporters:
-            - otlphttp/tempo
+            - otlphttp/tempo-ms
           processors:
             - memory_limiter
             - batch/traces

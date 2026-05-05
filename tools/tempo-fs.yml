@@ -1,7 +1,27 @@
 # Grafana Tempo Distributed - Production Ready Configuration
-# Optimized for single-AZ deployment with 7-8 trace sources
-# Low resource requests, production-grade limits
-# helm upgrade --install tempo grafana-community/tempo-distributed -f tools/traces-tempo.yml -n tempo
+# Backend: MinIO (in-cluster S3-compatible) — fixes local filesystem distributed mode limitation
+# All components share the same MinIO bucket — ring, metrics-generator, querier all work correctly
+# 30 day retention | MinIO PVC 600Gi (single shared volume)
+# helm upgrade --install tempo grafana/tempo-distributed -f tools/traces-tempo-pvc.yml -n tempo-ms
+
+# ---------------------------------------------------------------------------
+# Global overrides — MUST be top-level, NOT inside tempo.structuredConfig
+# (structuredConfig uses legacyConfig parser which rejects defaults: block)
+# ---------------------------------------------------------------------------
+global_overrides:
+  defaults:
+    ingestion:
+      rate_limit_bytes: 15000000
+      burst_size_bytes: 20000000
+    global:
+      max_bytes_per_trace: 5000000
+    compaction:
+      block_retention: 720h
+    metrics_generator:
+      processors:
+        - service-graphs
+        - span-metrics
+        - local-blocks
 
 # Global settings
 global:
@@ -12,23 +32,46 @@ global:
         fieldRef:
           fieldPath: status.podIP
 
-# Extra environment variables
-extraEnv:
-  - name: AWS_REGION
-    value: ap-southeast-2
-  - name: AWS_SDK_LOAD_CONFIG
-    value: "true"
+extraEnv: []
 
-# ServiceAccount with Pod Identity
 serviceAccount:
   create: true
   name: tempo
   automountServiceAccountToken: true
 
+# ---------------------------------------------------------------------------
+# MinIO — in-cluster S3-compatible object store
+# Single 600Gi PVC shared by ALL Tempo components — this is the correct
+# architecture for distributed Tempo. Local filesystem backend does NOT work
+# in distributed mode because each pod has its own disk and no pod can read
+# blocks written by another pod.
+# ---------------------------------------------------------------------------
+minio:
+  enabled: true
+  mode: standalone
+  persistence:
+    enabled: true
+    size: 600Gi
+    storageClass: gp3-csi
+  buckets:
+    - name: tempo-traces
+      policy: none
+      purge: false
+  rootUser: tempo
+  rootPassword: oqckegiubclkzy5n2j3t
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 2
+      memory: 4Gi
+
+# ---------------------------------------------------------------------------
 # Tempo configuration
+# ---------------------------------------------------------------------------
 tempo:
   structuredConfig:
-    # Server configuration
     server:
       http_listen_port: 3200
       grpc_listen_port: 9095
@@ -37,7 +80,21 @@ tempo:
       grpc_server_max_send_msg_size: 104857600  # 100MB
       grpc_server_max_concurrent_streams: 1000
 
-    # Distributor configuration
+    overrides:
+      defaults:
+        ingestion:
+          rate_limit_bytes: 15000000
+          burst_size_bytes: 20000000
+        global:
+          max_bytes_per_trace: 5000000
+        compaction:
+          block_retention: 720h
+        metrics_generator:
+          processors:
+            - service-graphs
+            - span-metrics
+            - local-blocks
+
     distributor:
       receivers:
         jaeger:
@@ -62,9 +119,7 @@ tempo:
         kvstore:
           store: memberlist
 
-    # Ingester configuration
     ingester:
-      # Reduced from 5m → 3m: flush blocks sooner to S3, reduces ingester memory pressure
       max_block_duration: 3m
       max_block_bytes: 536870912  # 512MB
       flush_check_period: 10s
@@ -78,7 +133,6 @@ tempo:
         heartbeat_period: 5s
         num_tokens: 128
 
-    # Compactor configuration
     compactor:
       compaction:
         block_retention: 720h  # 30 days
@@ -93,11 +147,11 @@ tempo:
         kvstore:
           store: memberlist
 
-    # Metrics Generator configuration
     metrics_generator:
       ring:
         kvstore:
           store: memberlist
+        instance_addr: ${MY_POD_IP}
       processor:
         local_blocks:
           max_live_traces: 50000
@@ -129,38 +183,37 @@ tempo:
         path: /var/tempo/generator/wal
         remote_write_flush_deadline: 1m
         remote_write:
-          - url: http://mimir-gateway.mimir/api/v1/push
+          - url: http://mimir-gateway.mimir.svc.cluster.local/api/v1/push
             send_exemplars: true
 
-    # Storage configuration
+    # ---------------------------------------------------------------------------
+    # Storage — MinIO S3-compatible backend
+    # All pods share this single endpoint — ingesters flush blocks here,
+    # queriers read from here, compactor merges here. Ring works correctly.
+    # ---------------------------------------------------------------------------
     storage:
       trace:
         backend: s3
-        # Reduced from 5m → 2m: more frequent blocklist refresh = faster trace visibility after flush
         blocklist_poll: 2m
         s3:
-          bucket: otel-traces-597088041925-ap-southeast-2-an
-          endpoint: s3.ap-southeast-2.amazonaws.com
-          region: ap-southeast-2
-          insecure: false
-          # Using Pod Identity - no credentials needed
-          # Hedging: fire a 2nd S3 request if the first hasn't responded in 500ms
-          hedge_requests_at: 500ms
-          hedge_requests_up_to: 2
+          bucket: tempo-traces
+          endpoint: tempo-minio.tempo-ms.svc.cluster.local:9000
+          region: us-east-1          # MinIO ignores region but field is required
+          access_key: tempo
+          secret_key: oqckegiubclkzy5n2j3t
+          insecure: true             # MinIO runs plain HTTP inside cluster
+          forcepathstyle: true       # required for MinIO path-style access
         wal:
           path: /var/tempo/wal
           v2_encoding: snappy
         block:
           bloom_filter_false_positive: 0.01
           v2_encoding: zstd
-          v2_index_downsample_bytes: 1048576  # 1MB
+          v2_index_downsample_bytes: 1048576
         pool:
-          # Increased from 100 → 200: more parallel S3 workers for faster block reads
-          max_workers: 200
-          # Increased from 10000 → 20000: larger queue to prevent worker starvation
-          queue_depth: 20000
+          max_workers: 100
+          queue_depth: 10000
 
-    # Cache configuration
     cache:
       background:
         writeback_goroutines: 10
@@ -171,45 +224,38 @@ tempo:
             - bloom
             - frontend-search
           memcached:
-            host: tempo-memcached.tempo.svc.cluster.local
-            # Increased from 500ms → 2000ms: tolerate memcached latency spikes
+            host: tempo-memcached.tempo-ms.svc.cluster.local
             timeout: 2000ms
-            # Increased from 16 → 32: more persistent connections to memcached
             max_idle_conns: 32
             ttl: 1h
 
-    # Querier configuration
     querier:
-      # Increased from 20 → 40: more concurrent query workers per querier pod
       max_concurrent_queries: 40
       frontend_worker:
-        frontend_address: tempo-query-frontend-discovery:9095
+        frontend_address: tempo-query-frontend-discovery.tempo-ms.svc.cluster.local:9095
         grpc_client_config:
           max_send_msg_size: 104857600
 
-    # Query Frontend configuration
     query_frontend:
       max_outstanding_per_tenant: 4000
       search:
         concurrent_jobs: 2000
-        target_bytes_per_job: 104857600 # 100MB
+        target_bytes_per_job: 104857600
         max_duration: 0
       max_retries: 3
       metrics:
         concurrent_jobs: 2000
         target_bytes_per_job: 104857600
-        max_duration: 0        # remove the 3h cap on TraceQL metrics queries
+        max_duration: 0
         query_backend_after: 5m
-        interval: 5m
-
-    # Memberlist configuration
+        interval: 5m   
     memberlist:
       bind_addr:
         - 0.0.0.0
       advertise_addr: ${MY_POD_IP}
       abort_if_cluster_join_fails: false
       join_members:
-        - tempo-gossip-ring.tempo.svc.cluster.local:7946
+        - tempo-gossip-ring.tempo-ms.svc.cluster.local:7946
       bind_port: 7946
       dead_node_reclaim_time: 30s
       gossip_interval: 200ms
@@ -221,22 +267,9 @@ tempo:
       max_join_backoff: 1m
       max_join_retries: 20
 
-    # Overrides configuration
-    overrides:
-      defaults:
-        ingestion:
-          rate_limit_bytes: 15000000
-          burst_size_bytes: 20000000
-        global:
-          max_bytes_per_trace: 5000000
-        compaction:
-          block_retention: 720h
-        metrics_generator:
-          processors:
-            - service-graphs
-            - span-metrics
-            - local-blocks
+# ---------------------------------------------------------------------------
 # Traces ingestion protocols
+# ---------------------------------------------------------------------------
 traces:
   otlp:
     http:
@@ -257,7 +290,9 @@ traces:
   zipkin:
     enabled: true
 
-# Distributor component
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
 distributor:
   replicas: 3
   extraArgs:
@@ -271,7 +306,6 @@ distributor:
     limits:
       cpu: 2
       memory: 4Gi
-  # Enable HPA — distributor is stateless and safe to scale horizontally
   autoscaling:
     enabled: false
     minReplicas: 3
@@ -279,7 +313,8 @@ distributor:
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 75
 
-# Ingester component
+# Ingester WAL only — blocks are flushed to MinIO after max_block_duration (3m)
+# No need for large PVC — 20Gi is enough for the WAL buffer
 ingester:
   replicas: 3
   extraArgs:
@@ -287,7 +322,7 @@ ingester:
   persistence:
     enabled: true
     storageClass: gp3-csi
-    size: 10Gi
+    size: 20Gi
   resources:
     requests:
       cpu: 500m
@@ -298,11 +333,15 @@ ingester:
   zoneAwareReplication:
     enabled: false
 
-# Querier component
 querier:
   replicas: 3
   extraArgs:
     - -config.expand-env=true
+  extraEnv:
+    - name: MY_POD_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
   resources:
     requests:
       cpu: 100m
@@ -310,16 +349,13 @@ querier:
     limits:
       cpu: 2
       memory: 4Gi
-  # Enable HPA on queriers — these are the primary bottleneck for slow searches
   autoscaling:
     enabled: false
     minReplicas: 3
     maxReplicas: 20
     targetCPUUtilizationPercentage: 70
 
-# Query Frontend component
 queryFrontend:
-  # Increased from 3 → 3 (keep same, frontend is lightweight — bottleneck is queriers)
   replicas: 3
   extraArgs:
     - -config.expand-env=true
@@ -331,13 +367,12 @@ queryFrontend:
       memory: 256Mi
     limits:
       cpu: 2
-      # Increased from 2Gi → 4Gi: frontend holds large in-flight query results
       memory: 4Gi
   query:
     enabled: true
     replicas: 1
 
-# Compactor component
+# Compactor scratch space only
 compactor:
   replicas: 3
   extraArgs:
@@ -345,7 +380,7 @@ compactor:
   persistence:
     enabled: true
     storageClass: gp3-csi
-    size: 20Gi
+    size: 50Gi
   resources:
     requests:
       cpu: 100m
@@ -354,23 +389,24 @@ compactor:
       cpu: 2
       memory: 4Gi
 
-# Metrics Generator component
 metricsGenerator:
   enabled: true
-  # Increased from 1 → 2: single replica is a SPOF and gets overloaded with 7-8 sources
   replicas: 2
   extraArgs:
     - -config.expand-env=true
+  extraEnv:
+    - name: MY_POD_IP
+      valueFrom:
+        fieldRef:
+          fieldPath: status.podIP
   resources:
     requests:
       cpu: 100m
       memory: 256Mi
     limits:
       cpu: 2
-      # Increased from 2Gi → 4Gi: metrics generator holds live trace state in memory
       memory: 4Gi
 
-# Gateway component (nginx)
 gateway:
   enabled: true
   replicas: 2
@@ -384,7 +420,6 @@ gateway:
   service:
     type: ClusterIP
 
-# Memcached for caching
 memcached:
   enabled: true
   chunksCache:
@@ -399,7 +434,6 @@ memcached:
         memory: 3Gi
     allocatedMemory: 2048
 
-# Memcached exporter
 memcachedExporter:
   enabled: true
   resources:
@@ -410,7 +444,6 @@ memcachedExporter:
       cpu: 100m
       memory: 128Mi
 
-# Monitoring
 metaMonitoring:
   serviceMonitor:
     enabled: true
@@ -419,12 +452,10 @@ metaMonitoring:
   grafanaAgent:
     enabled: false
 
-# RBAC
 rbac:
   create: true
   pspEnabled: false
 
-# Security context
 securityContext:
   runAsUser: 10001
   runAsGroup: 10001
@@ -433,7 +464,6 @@ securityContext:
   seccompProfile:
     type: RuntimeDefault
 
-# Pod security context for all components
 podSecurityContext:
   runAsUser: 10001
   runAsGroup: 10001
@@ -442,26 +472,16 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
-# Ingress (optional)
 ingress:
   enabled: false
-
-# Enterprise features (disabled)
 enterprise:
   enabled: false
-
-# Multi-tenancy
 multitenancyEnabled: false
-
-# Search enabled
 search:
   enabled: true
-
-# Continuous testing (disabled for production)
 tempo_continuous_test:
   enabled: false
 
-# Smoke test
 smoke_test:
   enabled: true
   resources:
