@@ -2,7 +2,7 @@
 # Backend: MinIO (in-cluster S3-compatible) — fixes local filesystem distributed mode limitation
 # All components share the same MinIO bucket — ring, metrics-generator, querier all work correctly
 # 30 day retention | MinIO PVC 600Gi (single shared volume)
-# helm upgrade --install tempo grafana/tempo-distributed -f tools/traces-tempo-pvc.yml -n tempo-ms
+# helm upgrade --install tempo grafana/tempo-distributed -f tools/tempo-fs.yml -n tempo-ms
 
 # ---------------------------------------------------------------------------
 # Global overrides — MUST be top-level, NOT inside tempo.structuredConfig
@@ -183,7 +183,7 @@ tempo:
         path: /var/tempo/generator/wal
         remote_write_flush_deadline: 1m
         remote_write:
-          - url: http://mimir-gateway.mimir.svc.cluster.local/api/v1/push
+          - url: http://mimir-gateway.mimir-ms.svc.cluster.local/api/v1/push
             send_exemplars: true
 
     # ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ tempo:
         s3:
           bucket: tempo-traces
           endpoint: tempo-minio.tempo-ms.svc.cluster.local:9000
-          region: us-east-1          # MinIO ignores region but field is required
+          region: ap-southeast-2          # MinIO ignores region but field is required
           access_key: tempo
           secret_key: oqckegiubclkzy5n2j3t
           insecure: true             # MinIO runs plain HTTP inside cluster
