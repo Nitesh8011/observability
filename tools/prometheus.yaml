@@ -36,8 +36,6 @@ spec:
         storageClassName: gp3-csi
   remoteWrite:
     - url: http://mimir-gateway.mimir-ms:80/api/v1/push
-      headers:
-        Content-Encoding: snappy
       queueConfig:
         capacity: 25000
         maxShards: 30
