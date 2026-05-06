@@ -1,0 +1,54 @@
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: prometheus-eks
+  namespace: prometheus
+spec:
+  evaluationInterval: 30s
+  podMonitorSelector: 
+    matchLabels:
+      release: prometheus
+  portName: web
+  replicas: 1
+  resources:
+    limits:
+      cpu: 600m
+      memory: 3Gi
+    requests:
+      cpu: 100m
+      memory: 1Gi
+  retention: 1d
+  scrapeInterval: 30s
+  securityContext:
+    fsGroup: 65534
+  serviceAccountName: prometheus
+  serviceMonitorSelector:
+    matchLabels:
+      release: prometheus
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Gi
+        storageClassName: gp3-csi
+  remoteWrite:
+    - url: http://mimir-gateway.mimir-ms:80/api/v1/push
+      headers:
+        Content-Encoding: snappy
+      queueConfig:
+        capacity: 25000
+        maxShards: 30
+        minShards: 4
+        maxSamplesPerSend: 5000
+        batchSendDeadline: 5s
+        minBackoff: 100ms
+        maxBackoff: 10s
+        retryOnRateLimit: true
+      metadataConfig:
+        send: true
+        sendInterval: 1m
+      remoteTimeout: 30s
+      sendExemplars: true
