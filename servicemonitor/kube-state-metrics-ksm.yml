@@ -1,0 +1,62 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kube-state-metrics-ksm
+  namespace: prometheus
+  labels:
+    app: kube-state-metrics-ksm
+    release: prometheus
+spec:
+  endpoints:
+    - port: http
+      interval: 30s
+      honorLabels: true
+      metricRelabelings:
+        - action: replace
+          sourceLabels: [namespace]
+          targetLabel: k8s_namespace_name
+          regex: (.+)
+        - action: replace
+          sourceLabels: [pod]
+          targetLabel: k8s_pod_name
+          regex: (.+)
+        - action: replace
+          sourceLabels: [container]
+          targetLabel: k8s_container_name
+          regex: (.+)
+        - action: replace
+          sourceLabels: [deployment]
+          targetLabel: k8s_deployment_name
+          regex: (.+)
+        - action: replace
+          sourceLabels: [statefulset]
+          targetLabel: k8s_statefulset_name
+          regex: (.+)
+
+        # Drop the originals after copying
+        - action: labeldrop
+          regex: endpoint
+        - action: labeldrop
+          regex: instance
+        - action: labeldrop
+          regex: job
+        - action: labeldrop
+          regex: namespace
+        - action: labeldrop
+          regex: pod
+        - action: labeldrop
+          regex: container
+        - action: labeldrop
+          regex: service
+        - action: labeldrop
+          regex: uid
+        - action: labeldrop
+          regex: deployment
+        - action: labeldrop
+          regex: statefulset
+  namespaceSelector:
+    matchNames:
+      - prometheus
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-state-metrics
