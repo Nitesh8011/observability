@@ -15,6 +15,7 @@ spec:
   config:
     exporters:
       otlp:
+        compression: gzip
         endpoint: 'otel-gateway.prospecta.com:443'
         headers:
           authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
@@ -25,8 +26,8 @@ spec:
           max_interval: 30s
         sending_queue:
           enabled: true
-          num_consumers: 8
-          queue_size: 1000
+          num_consumers: 16
+          queue_size: 5000
         timeout: 30s
         tls:
           ca_file: /client-ca/ca.crt
@@ -39,8 +40,8 @@ spec:
         path: /
     processors:
       batch:
-        send_batch_max_size: 4096
-        send_batch_size: 2048
+        send_batch_max_size: 2048
+        send_batch_size: 1024
         timeout: 30s
       filter:
         metrics:
@@ -66,12 +67,13 @@ spec:
         error_mode: ignore
         logs:
           log_record:
-            - Len(body) > 500
+            - body != nil and Len(body) > 10000
       k8sattributes:
         auth_type: serviceAccount
         extract:
           metadata:
             - k8s.deployment.name
+            - k8s.statefulset.name
             - k8s.namespace.name
         passthrough: false
         pod_association:
@@ -93,7 +95,7 @@ spec:
         attributes:
           - action: insert
             key: cluster.name
-            value: ohio
+            value: FUSE-INTERNAL
       resource/cleanup:
         attributes:
           - action: delete
@@ -147,8 +149,6 @@ spec:
           - action: delete
             key: k8s.replicaset.name
           - action: delete
-            key: k8s.statefulset.name
-          - action: delete
             key: k8s.daemonset.name
           - action: delete
             key: service.instance.id
@@ -158,7 +158,21 @@ spec:
             key: severity_number
           - action: delete
             key: severity_text
+      transform/add_cluster_label:
+        metric_statements:
+          - context: datapoint
+            statements:
+              - 'set(attributes["cluster"], resource.attributes["cluster.name"])'
     receivers:
+      filelog:
+        include:
+          - /var/log/pods/load-testing*/*/*.log
+        include_file_name: false
+        include_file_path: true
+        operators:
+          - id: container-parser
+            type: container
+        start_at: end
       hostmetrics:
         collection_interval: 30s
         scrapers:
@@ -198,21 +212,22 @@ spec:
           processors:
             - memory_limiter
             - k8sattributes
-            - resource/cleanup
             - resource
+            - resource/cleanup
             - filter/drop_long_logs
             - batch
           receivers:
-            - otlp
+            - filelog
         metrics:
           exporters:
             - otlp
           processors:
             - memory_limiter
             - k8sattributes
-            - resource/cleanup
             - resource
+            - resource/cleanup
             - filter
+            - transform/add_cluster_label
             - batch
           receivers:
             - otlp
@@ -225,8 +240,8 @@ spec:
           processors:
             - memory_limiter
             - k8sattributes
-            - resource/cleanup
             - resource
+            - resource/cleanup
             - batch
           receivers:
             - otlp
@@ -241,13 +256,7 @@ spec:
                     host: 0.0.0.0
                     port: 8888
   mode: daemonset
-  resources:
-    limits:
-      cpu: '1'
-      memory: 4Gi
-    requests:
-      cpu: 100m
-      memory: 512Mi
+  resources: {}
   podDnsConfig: {}
   env:
     - name: OTEL_AUTH_TOKEN
@@ -268,6 +277,9 @@ spec:
     - mountPath: /client-ca
       name: client-ca
       readOnly: true
+    - mountPath: /var/log/pods
+      name: varlogpods
+      readOnly: true
   ingress:
     route: {}
   volumes:
@@ -277,6 +289,10 @@ spec:
     - name: client-ca
       secret:
         secretName: otel-agent-ca
+    - hostPath:
+        path: /var/log/pods
+        type: Directory
+      name: varlogpods
   daemonSetUpdateStrategy:
     rollingUpdate:
       maxSurge: 1
@@ -285,13 +301,7 @@ spec:
     observability:
       metrics: {}
     enabled: true
-    resources:
-      limits:
-        cpu: 500m
-        memory: 512Mi
-      requests:
-        cpu: 100m
-        memory: 256Mi
+    resources: {}
     filterStrategy: relabel-config
     allocationStrategy: per-node
     serviceAccount: otel-agent-targetallocator
@@ -300,15 +310,18 @@ spec:
       podMonitorSelector:
         matchLabels:
           prometheus: grafana
+      probeSelector:
+        matchLabels:
+          prometheus: grafana
       scrapeInterval: 1m0s
       serviceMonitorSelector:
         matchLabels:
           prometheus: grafana
-    replicas: 5
+    replicas: 4
     collectorNotReadyGracePeriod: 30s
     collectorTargetReloadInterval: 30s
   image: 'ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.149.0'
-  replicas: 5
+  replicas: 4
   ipFamilyPolicy: SingleStack
   configVersions: 3
   podAnnotations:
@@ -380,7 +393,8 @@ apiVersion: v1
 metadata:
   name: otel-agent-collector
   namespace: opentelemetry
-# oc adm policy add-scc-to-user privileged -z otel-gateway-collector
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::448049790823:role/cw-otel-role
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -437,3 +451,42 @@ subjects:
   - kind: ServiceAccount
     name: otel-agent-targetallocator
     namespace: opentelemetry
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IRSA Setup — run these commands BEFORE applying this manifest
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# 1. Create IAM policy (save as cloudwatch-policy.json first):
+#
+#    aws iam create-policy \
+#      --policy-name otel-agent-cloudwatch-policy \
+#      --policy-document file://cloudwatch-policy.json \
+#      --profile fuse-internal
+#
+# 2. Create IRSA role and attach to service account:
+#
+#    eksctl create iamserviceaccount \
+#      --name otel-agent-collector \
+#      --namespace opentelemetry \
+#      --cluster <your-cluster-name> \
+#      --region ap-southeast-1 \
+#      --attach-policy-arn arn:aws:iam::<account-id>:policy/otel-agent-cloudwatch-policy \
+#      --override-existing-serviceaccounts \
+#      --approve \
+#      --profile fuse-internal
+#
+# 3. Create credentials secret:
+#
+#    kubectl create secret generic otel-pg-credentials \
+#      --namespace opentelemetry \
+#      --from-literal=PG_HOST=your-rds-endpoint.ap-southeast-1.rds.amazonaws.com \
+#      --from-literal=PG_MONITOR_PASSWORD=your-password \
+#      --from-literal=RDS_INSTANCE_ID=your-rds-instance-identifier
+#
+# 4. Create RDS CA secret:
+#
+#    wget https://truststore.pki.rds.amazonaws.com/ap-southeast-1/ap-southeast-1-bundle.pem
+#    kubectl create secret generic otel-pg-ca \
+#      --namespace opentelemetry \
+#      --from-file=ca.crt=./ap-southeast-1-bundle.pem
+# ─────────────────────────────────────────────────────────────────────────────
