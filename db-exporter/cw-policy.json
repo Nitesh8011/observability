@@ -1,0 +1,41 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "YACECloudWatchRead",
+            "Effect": "Allow",
+            "Action": [
+                "cloudwatch:GetMetricData",
+                "cloudwatch:GetMetricStatistics",
+                "cloudwatch:ListMetrics"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "YACETagDiscovery",
+            "Effect": "Allow",
+            "Action": [
+                "tag:GetResources"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "YACERDSDiscovery",
+            "Effect": "Allow",
+            "Action": [
+                "rds:DescribeDBInstances",
+                "rds:DescribeDBClusters",
+                "rds:ListTagsForResource"
+            ],
+            "Resource": "*"
+        },
+        {
+            "Sid": "YACEAccountInfo",
+            "Effect": "Allow",
+            "Action": [
+                "iam:ListAccountAliases"
+            ],
+            "Resource": "*"
+        }
+    ]
+}

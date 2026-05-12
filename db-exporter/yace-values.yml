@@ -1,0 +1,136 @@
+# YACE — Yet Another CloudWatch Exporter
+# Chart: prometheus-community/prometheus-yet-another-cloudwatch-exporter
+# Purpose: Scrape AWS RDS PostgreSQL instance metrics
+# Auth: IRSA (no access keys)
+# Namespace: opentelemetry
+
+# ── IRSA Service Account ───────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  name: yace
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::448049790823:role/cw-otel-role
+
+# ── YACE AWS config ────────────────────────────────────────────────────────
+aws:
+  region: ap-southeast-1
+
+# ── YACE scrape config ─────────────────────────────────────────────────────
+# This is the core config — passed as config.yaml inside the pod
+config: |
+  apiVersion: v1alpha1
+  sts-region: ap-southeast-1
+  static:
+    - name: postgreslt-rds
+      namespace: AWS/RDS
+      regions:
+        - ap-southeast-1
+      dimensions:
+        - name: DBInstanceIdentifier
+          value: postgreslt
+      metrics:
+        - name: CPUUtilization
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: FreeableMemory
+          statistics: [Average, Minimum]
+          period: 300
+          length: 300
+        - name: FreeStorageSpace
+          statistics: [Average, Minimum]
+          period: 300
+          length: 300
+        - name: ReadIOPS
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: WriteIOPS
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: ReadLatency
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: WriteLatency
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: DatabaseConnections
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: DiskQueueDepth
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: BurstBalance
+          statistics: [Average, Minimum]
+          period: 300
+          length: 300
+        - name: SwapUsage
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: NetworkReceiveThroughput
+          statistics: [Average]
+          period: 300
+          length: 300
+        - name: NetworkTransmitThroughput
+          statistics: [Average]
+          period: 300
+          length: 300
+        - name: OldestReplicationSlotLag
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: ReplicationSlotDiskUsage
+          statistics: [Average, Maximum]
+          period: 300
+          length: 300
+        - name: TransactionLogsDiskUsage
+          statistics: [Average]
+          period: 300
+          length: 300
+        - name: MaximumUsedTransactionIDs
+          statistics: [Average]
+          period: 300
+          length: 300
+
+# ── ServiceMonitor — auto-picked up by your Target Allocator ───────────────
+serviceMonitor:
+  enabled: true
+  namespace: opentelemetry
+  interval: 60s
+  scrapeTimeout: 30s
+  additionalLabels:
+    prometheus: grafana          # matches serviceMonitorSelector in agent.yml
+
+# ── Resources ─────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# ── Pod settings ──────────────────────────────────────────────────────────
+replicaCount: 1
+
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+
+# ── No ingress needed ─────────────────────────────────────────────────────
+ingress:
+  enabled: false
+
+
+# helm upgrade --install yace \
+#   prometheus-community/prometheus-yet-another-cloudwatch-exporter \
+#   --version 0.45.0 \
+#   --namespace opentelemetry \
+#   --values db-exporter/yace-values.yml \
+#   --wait \
+#   --timeout 120s
