@@ -5,10 +5,29 @@ metadata:
   namespace: prometheus
 spec:
   evaluationInterval: 30s
-  podMonitorSelector: 
+  externalLabels:
+    cluster: EKS
+    environment: observability
+  podMonitorSelector:
     matchLabels:
       release: prometheus
   portName: web
+  remoteWrite:
+    - metadataConfig:
+        send: true
+        sendInterval: 1m
+      queueConfig:
+        batchSendDeadline: 5s
+        capacity: 25000
+        maxBackoff: 10s
+        maxSamplesPerSend: 5000
+        maxShards: 30
+        minBackoff: 100ms
+        minShards: 4
+        retryOnRateLimit: true
+      remoteTimeout: 30s
+      sendExemplars: true
+      url: http://mimir-gateway.mimir-ms:80/api/v1/push
   replicas: 1
   resources:
     limits:
@@ -25,6 +44,9 @@ spec:
   serviceMonitorSelector:
     matchLabels:
       release: prometheus
+  probeSelector:
+    matchLabels:
+      release: prometheus
   storage:
     volumeClaimTemplate:
       spec:
@@ -34,19 +56,3 @@ spec:
           requests:
             storage: 50Gi
         storageClassName: gp3-csi
-  remoteWrite:
-    - url: http://mimir-gateway.mimir-ms:80/api/v1/push
-      queueConfig:
-        capacity: 25000
-        maxShards: 30
-        minShards: 4
-        maxSamplesPerSend: 5000
-        batchSendDeadline: 5s
-        minBackoff: 100ms
-        maxBackoff: 10s
-        retryOnRateLimit: true
-      metadataConfig:
-        send: true
-        sendInterval: 1m
-      remoteTimeout: 30s
-      sendExemplars: true
