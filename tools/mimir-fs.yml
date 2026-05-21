@@ -166,6 +166,7 @@ minio:
     enabled: true
     size: 600Gi
     storageClass: gp3-csi
+    existingClaim: mimir-minio
   buckets:
     - name: mimir-blocks
       policy: none
@@ -277,6 +278,16 @@ mimir:
       deletion_delay: 12h
       tenant_cleanup_delay: 6h
 
+    # ---------------------------------------------------------------------------
+    # Compression — gRPC internal traffic
+    # zstd is not yet supported for grpc_compression in Mimir (issue #8522).
+    # s2 is the best available option: ~53% traffic reduction, low CPU overhead.
+    # Supported values: snappy | gzip | s2
+    # ---------------------------------------------------------------------------
+    ingester_client:
+      grpc_client_config:
+        grpc_compression: s2   # distributor → ingester (highest-volume path)
+
     distributor:
       ha_tracker:
         enable_ha_tracker: true
@@ -353,6 +364,12 @@ mimir:
       lookback_delta: 5m
       max_concurrent: 32
       timeout: 5m
+      store_gateway_client:
+        grpc_compression: s2   # querier → store-gateway
+
+    frontend_worker:
+      grpc_client_config:
+        grpc_compression: s2   # query-frontend ↔ query-scheduler
 
     # ---------------------------------------------------------------------------
     # ruler_storage — MinIO S3-compatible
@@ -514,4 +531,4 @@ store_gateway:
     targetCPUUtilizationPercentage: 70
     targetMemoryUtilizationPercentage: 75
 
-# helm upgrade --install mimir grafana/mimir-distributed -f tools/mimir-metrics.yml -n mimir
+# helm upgrade --install mimir grafana/mimir-distributed -f tools/mimir-fs.yml -n mimir-ms

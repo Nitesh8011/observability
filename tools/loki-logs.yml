@@ -96,6 +96,7 @@ loki:
     repository: grafana/loki
     tag: 3.5.7
   ingester:
+    chunk_encoding: zstd
     chunk_idle_period: 1m
     chunk_retain_period: 15s
     chunk_target_size: 1572864
@@ -124,7 +125,7 @@ loki:
     max_line_size_truncate: false
     max_query_capacity: 536870912
     max_query_length: 168h
-    max_query_lookback: 0
+    max_query_lookback: 90d
     max_query_parallelism: 24
     max_query_series: 5000
     max_streams_matchers_per_query: 10000
@@ -139,8 +140,8 @@ loki:
     per_stream_rate_limit_burst: 64MB
     query_timeout: 300s
     reject_old_samples: true
-    reject_old_samples_max_age: 168h
-    retention_period: 15d
+    reject_old_samples_max_age: 2160h
+    retention_period: 90d
     shard_streams:
       desired_rate: 5242880
       enabled: true

@@ -10,7 +10,7 @@ spec:
   config:
     exporters:
       otlphttp/loki:
-        compression: gzip
+        compression: zstd
         endpoint: http://loki-gateway.loki/otlp
         retry_on_failure:
           enabled: true
@@ -23,6 +23,7 @@ spec:
           queue_size: 50000
         timeout: 120s
       otlphttp/mimir-ms:
+        compression: zstd
         endpoint: http://mimir-gateway.mimir-ms:8080/otlp
         retry_on_failure:
           enabled: true
