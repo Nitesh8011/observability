@@ -101,6 +101,7 @@ ingester:
     enabled: false
 
 kafka:
+  enabled: true
   # extraEnv:
   #   - name: KAFKA_LOG_RETENTION_HOURS
   #     value: "1"
@@ -110,7 +111,7 @@ kafka:
     log.retention.bytes: "1073741824"
     log.retention.ms: "3600000"
     log.segment.bytes: "104857600"
-  enabled: true
+    log.retention.check.interval.ms: "300000"
   persistence:
     size: 50Gi
     storageClass: gp3-csi

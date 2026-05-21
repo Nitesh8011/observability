@@ -10,7 +10,7 @@ spec:
   config:
     exporters:
       otlphttp/loki:
-        compression: zstd
+        compression: gzip
         endpoint: http://loki-gateway.loki/otlp
         retry_on_failure:
           enabled: true
