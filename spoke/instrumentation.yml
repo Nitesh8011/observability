@@ -7,10 +7,6 @@ spec:
     endpoint: 'http://otel-agent-collector.opentelemetry:4318'
   java:
     env:
-      - name: JAVA_TOOL_OPTIONS
-        value: >-
-          -Xlog:gc*::time,uptime,level,tags
-          -Xlog:safepoint::time,uptime,level,tags
       - name: OTEL_EXPORTER_OTLP_ENDPOINT
         value: 'http://otel-agent-collector.opentelemetry:4318'
       - name: OTEL_EXPORTER_OTLP_PROTOCOL
@@ -22,7 +18,7 @@ spec:
       - name: OTEL_EXPORTER_OTLP_LOGS_PROTOCOL
         value: http/protobuf
       - name: OTEL_LOGS_EXPORTER
-        value: otlp
+        value: none
       - name: OTEL_TRACES_EXPORTER
         value: otlp
       - name: OTEL_METRICS_EXPORTER
@@ -45,6 +41,8 @@ spec:
         value: 'true'
       - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_EXPERIMENTAL_CAPTURE_KEY_VALUE_PAIR_ATTRIBUTES
         value: 'true'
+      - name: OTEL_EXPORTER_OTLP_COMPRESSION
+        value: gzip
       - name: OTEL_EXPORTER_OTLP_TIMEOUT
         value: '10000'
       - name: OTEL_INSTRUMENTATION_RUNTIME_METRICS_ENABLED

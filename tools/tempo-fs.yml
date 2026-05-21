@@ -2,7 +2,7 @@
 # Backend: MinIO (in-cluster S3-compatible) — fixes local filesystem distributed mode limitation
 # All components share the same MinIO bucket — ring, metrics-generator, querier all work correctly
 # 30 day retention | MinIO PVC 600Gi (single shared volume)
-# helm upgrade --install tempo grafana/tempo-distributed -f tools/tempo-fs.yml -n tempo-ms
+# helm upgrade --install tempo grafana-community/tempo-distributed -f tools/tempo-fs.yml -n tempo-ms
 
 # ---------------------------------------------------------------------------
 # Global overrides — MUST be top-level, NOT inside tempo.structuredConfig
@@ -53,6 +53,9 @@ minio:
     enabled: true
     size: 600Gi
     storageClass: gp3-csi
+    # existingClaim prevents Helm from re-applying .spec.resources.requests.storage
+    # on an already-provisioned PVC (PVC storage is immutable; kubectl-patch owns this field)
+    existingClaim: tempo-minio
   buckets:
     - name: tempo-traces
       policy: none
@@ -113,6 +116,7 @@ tempo:
           protocols:
             http:
               endpoint: 0.0.0.0:4318
+              include_metadata: true
             grpc:
               endpoint: 0.0.0.0:4317
       ring:
@@ -205,7 +209,7 @@ tempo:
           forcepathstyle: true       # required for MinIO path-style access
         wal:
           path: /var/tempo/wal
-          v2_encoding: snappy
+          v2_encoding: zstd
         block:
           bloom_filter_false_positive: 0.01
           v2_encoding: zstd
@@ -235,6 +239,7 @@ tempo:
         frontend_address: tempo-query-frontend-discovery.tempo-ms.svc.cluster.local:9095
         grpc_client_config:
           max_send_msg_size: 104857600
+          grpc_compression: zstd
 
     query_frontend:
       max_outstanding_per_tenant: 4000
@@ -337,11 +342,7 @@ querier:
   replicas: 3
   extraArgs:
     - -config.expand-env=true
-  extraEnv:
-    - name: MY_POD_IP
-      valueFrom:
-        fieldRef:
-          fieldPath: status.podIP
+  # MY_POD_IP is already injected globally via global.extraEnv — do NOT repeat here
   resources:
     requests:
       cpu: 100m
@@ -394,11 +395,7 @@ metricsGenerator:
   replicas: 2
   extraArgs:
     - -config.expand-env=true
-  extraEnv:
-    - name: MY_POD_IP
-      valueFrom:
-        fieldRef:
-          fieldPath: status.podIP
+  # MY_POD_IP is already injected globally via global.extraEnv — do NOT repeat here
   resources:
     requests:
       cpu: 100m

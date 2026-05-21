@@ -1,0 +1,3 @@
+helm upgrade --install alloy-agent grafana/alloy \
+  --namespace alloy \
+  --values alloy/pyro.yml

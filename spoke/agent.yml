@@ -15,7 +15,7 @@ spec:
   config:
     exporters:
       otlp:
-        compression: gzip
+        compression: zstd
         endpoint: 'otel-gateway.prospecta.com:443'
         headers:
           authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
@@ -34,72 +34,37 @@ spec:
           cert_file: /client-tls/tls.crt
           insecure: false
           key_file: /client-tls/tls.key
+      otlp/pulsar-metrics:
+        endpoint: 'otel-gateway.prospecta.com:443'
+        headers:
+          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 300s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 4
+          queue_size: 1000
+        timeout: 30s
+        tls:
+          ca_file: /client-ca/ca.crt
+          cert_file: /client-tls/tls.crt
+          insecure: false
+          key_file: /client-tls/tls.key
     extensions:
       health_check:
         endpoint: '0.0.0.0:13133'
         path: /
     processors:
-      batch:
-        send_batch_max_size: 2048
-        send_batch_size: 1024
-        timeout: 30s
-      filter:
-        metrics:
-          exclude:
-            match_type: regexp
-            metric_names:
-              - .*_bucket
-              - .*_sum
-              - .*_count
-              - target_info
-              - otel.*
-              - otlp_.*
-              - scrape_.*
-              - go_.*
-              - process_.*
-              - rpc_.*
-              - system_.*
-              - exported_.*
-              - queueSize_ratio
-              - processedLogs_total
-              - processedSpans_total
-      filter/drop_long_logs:
-        error_mode: ignore
-        logs:
-          log_record:
-            - body != nil and Len(body) > 10000
-      k8sattributes:
-        auth_type: serviceAccount
-        extract:
-          metadata:
-            - k8s.deployment.name
-            - k8s.statefulset.name
-            - k8s.namespace.name
-        passthrough: false
-        pod_association:
-          - sources:
-              - from: resource_attribute
-                name: k8s.pod.ip
-          - sources:
-              - from: resource_attribute
-                name: k8s.pod.uid
-          - sources:
-              - from: connection
-      memory_limiter:
-        check_interval: 1s
-        limit_mib: 3700
-        limit_percentage: 75
-        spike_limit_mib: 200
-        spike_limit_percentage: 15
-      resource:
+      resource/metrics:
         attributes:
-          - action: insert
-            key: cluster.name
-            value: FUSE-INTERNAL
+          - action: upsert
+            key: k8s.node.name
+            value: '${env:K8S_NODE_NAME}'
       resource/cleanup:
         attributes:
-          - action: delete
-            key: k8s.pod.name
           - action: delete
             key: k8s.replicaset.uid
           - action: delete
@@ -158,11 +123,86 @@ spec:
             key: severity_number
           - action: delete
             key: severity_text
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 3700
+        limit_percentage: 75
+        spike_limit_mib: 200
+        spike_limit_percentage: 15
+      resource:
+        attributes:
+          - action: insert
+            key: cluster.name
+            value: FUSE-INTERNAL
       transform/add_cluster_label:
         metric_statements:
           - context: datapoint
             statements:
               - 'set(attributes["cluster"], resource.attributes["cluster.name"])'
+      batch/metrics:
+        send_batch_size: 512
+        timeout: 5s
+      k8s_attributes:
+        auth_type: serviceAccount
+        extract:
+          metadata:
+            - k8s.namespace.name
+            - k8s.deployment.name
+            - k8s.statefulset.name
+            - k8s.pod.name
+            - k8s.cronjob.name
+            - k8s.job.name
+        passthrough: false
+        pod_association:
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.ip
+          - sources:
+              - from: resource_attribute
+                name: k8s.pod.uid
+          - sources:
+              - from: connection
+      resource/pulsar-metrics:
+        attributes:
+          - action: upsert
+            key: k8s.node.name
+            value: '${env:K8S_NODE_NAME}'
+      filter/pulsar-noisy:
+        metrics:
+          exclude:
+            match_type: regexp
+            metric_names:
+              - pulsar_consumer_.*
+              - pulsar_producer_.*
+      filter:
+        metrics:
+          exclude:
+            match_type: regexp
+            metric_names:
+              - target_info
+              - otel.*
+              - otlp_.*
+              - scrape_.*
+              - go_.*
+              - process_.*
+              - rpc_.*
+              - system_.*
+              - exported_.*
+              - queueSize_ratio
+              - processedLogs_total
+              - processedSpans_total
+      filter/drop_long_logs:
+        error_mode: ignore
+        logs:
+          log_record:
+            - body != nil and Len(body) > 500
+      batch:
+        send_batch_max_size: 1024
+        send_batch_size: 512
+        timeout: 5s
+      memory_limiter/metrics:
+        check_interval: 5s
+        limit_mib: 256
     receivers:
       filelog:
         include:
@@ -211,7 +251,7 @@ spec:
             - otlp
           processors:
             - memory_limiter
-            - k8sattributes
+            - k8s_attributes
             - resource
             - resource/cleanup
             - filter/drop_long_logs
@@ -223,7 +263,7 @@ spec:
             - otlp
           processors:
             - memory_limiter
-            - k8sattributes
+            - k8s_attributes
             - resource
             - resource/cleanup
             - filter
@@ -239,9 +279,9 @@ spec:
             - otlp
           processors:
             - memory_limiter
-            - k8sattributes
-            - resource
+            - k8s_attributes
             - resource/cleanup
+            - resource
             - batch
           receivers:
             - otlp
@@ -258,6 +298,10 @@ spec:
   mode: daemonset
   resources: {}
   podDnsConfig: {}
+  podSecurityContext:
+    runAsUser: 0
+    seLinuxOptions:
+      type: spc_t
   env:
     - name: OTEL_AUTH_TOKEN
       valueFrom:
@@ -268,6 +312,10 @@ spec:
       value: '70'
     - name: GOMEMLIMIT
       value: 3700MiB
+    - name: K8S_NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
   managementState: managed
   upgradeStrategy: automatic
   volumeMounts:

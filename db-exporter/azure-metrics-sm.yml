@@ -1,0 +1,48 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: azure-metrics-exporter
+  namespace: opentelemetry
+  labels:
+    prometheus: grafana
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: azure-metrics-exporter
+      app.kubernetes.io/instance: azure-metrics-exporter
+  namespaceSelector:
+    matchNames:
+      - opentelemetry
+  endpoints:
+    - port: http
+      interval: 60s
+      scrapeTimeout: 30s
+      path: /probe/metrics/list
+      params:
+        name:
+          - "azure_postgresql_flexibleserver"
+        subscription:
+          - "a959744b-354d-482c-80ba-d4acb20a3a8b"
+        filter:
+          - "resourceType eq 'Microsoft.DBforPostgreSQL/flexibleServers'"
+        metric:
+          - "cpu_percent"
+          - "memory_percent"
+          - "storage_percent"
+          - "storage_used"
+          - "storage_limit"
+          - "iops"
+          - "active_connections"
+          - "network_bytes_egress"
+          - "network_bytes_ingress"
+          - "backup_storage_used"
+          - "replication_lag"
+          - "maximum_used_transactionIDs"
+          - "oldest_replication_slot_lag"
+          - "is_db_alive"
+        aggregation:
+          - "Average"
+          - "Maximum"
+          - "Minimum"
+        interval:
+          - "PT1M"

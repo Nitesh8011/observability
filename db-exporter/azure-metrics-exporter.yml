@@ -1,0 +1,89 @@
+# azure-metrics-exporter helm values
+# Chart: webdevops/azure-metrics-exporter
+# Purpose: Scrape Azure PostgreSQL Flexible Server metrics
+# Auth: Azure Workload Identity (equivalent of IRSA — no client secrets)
+# Namespace: opentelemetry
+
+# ── Azure Workload Identity ────────────────────────────────────────────────
+# This replaces client_secret — pod gets Azure token via projected volume
+podLabels:
+  azure.workload.identity/use: "true"   # required for workload identity injection
+
+serviceAccount:
+  create: true
+  name: azure-metrics-exporter
+  annotations:
+    azure.workload.identity/client-id: "d4f70483-2475-42d3-b7b7-954def2a7aaa"
+
+# ── Azure auth env vars — injected automatically by workload identity ──────
+# AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE
+# are all injected by the workload identity webhook — no secrets needed
+env:
+  - name: AZURE_TENANT_ID
+    value: "4d7ab632-40a4-4294-bb5f-4eea5ceb4ab7"
+  - name: AZURE_SUBSCRIPTION_ID
+    value: "a959744b-354d-482c-80ba-d4acb20a3a8b"
+
+# ── ServiceMonitor — auto-picked up by your Target Allocator ──────────────
+serviceMonitor:
+  enabled: true
+  # Scrape the /probe/metrics/list endpoint with PostgreSQL-specific params
+  additionalLabels:
+    prometheus: grafana              # matches serviceMonitorSelector in agent.yml
+  interval: 60s
+  scrapeTimeout: 30s
+  # Pass query params to the probe endpoint for PostgreSQL Flexible Server
+  params:
+    name: ["azure_postgresql_flexibleserver"]
+    subscription: ["a959744b-354d-482c-80ba-d4acb20a3a8b"]
+    filter: ["resourceType eq 'Microsoft.DBforPostgreSQL/flexibleServers'"]
+    metric:
+      - cpu_percent
+      - memory_percent
+      - storage_percent
+      - storage_used
+      - storage_limit
+      - iops
+      - read_iops
+      - write_iops
+      - read_throughput
+      - write_throughput
+      - active_connections
+      - network_bytes_egress
+      - network_bytes_ingress
+      - backup_storage_used
+      - replication_lag
+      - maximum_used_transactionIDs
+      - oldest_replication_slot_lag
+      - pg_replica_log_delay_in_bytes
+      - is_db_alive
+    aggregation: ["Average,Maximum,Minimum"]
+    interval: ["PT1M"]
+  metricsPath: /probe/metrics/list
+
+# ── Resources ─────────────────────────────────────────────────────────────
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# ── Pod settings ──────────────────────────────────────────────────────────
+replicaCount: 1
+
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "true"
+
+ingress:
+  enabled: false
+
+
+
+# helm upgrade --install azure-metrics-exporter \
+#   webdevops/azure-metrics-exporter \
+#   --version 1.2.11 \
+#   --namespace opentelemetry \
+#   --values db-exporter/azure-metrics-exporter.yml \
+#   --wait

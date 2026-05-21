@@ -22,19 +22,6 @@ spec:
           num_consumers: 8
           queue_size: 50000
         timeout: 120s
-      otlphttp/mimir:
-        endpoint: http://mimir-gateway.mimir:8080/otlp
-        retry_on_failure:
-          enabled: true
-          initial_interval: 5s
-          max_elapsed_time: 300s
-          max_interval: 30s
-        sending_queue:
-          enabled: true
-          num_consumers: 5
-          queue_size: 10000
-        tls:
-          insecure: true
       otlphttp/mimir-ms:
         endpoint: http://mimir-gateway.mimir-ms:8080/otlp
         retry_on_failure:
@@ -50,6 +37,7 @@ spec:
           insecure: true
       otlphttp/tempo-ms:
         endpoint: http://tempo-gateway.tempo-ms
+        compression: zstd
         retry_on_failure:
           enabled: true
           initial_interval: 5s
@@ -126,7 +114,6 @@ spec:
             - otlp
         metrics:
           exporters:
-            # - otlphttp/mimir
             - otlphttp/mimir-ms
           processors:
             - memory_limiter

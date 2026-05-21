@@ -97,6 +97,10 @@ config: |
           statistics: [Average]
           period: 300
           length: 300
+          - name: DBLoad
+            statistics: [Average]
+            period: 300
+            length: 300
 
     - name: fuse-auth-ohio-rds
       namespace: AWS/RDS
@@ -174,6 +178,10 @@ config: |
           statistics: [Average]
           period: 300
           length: 300
+          - name: DBLoad
+            statistics: [Average]
+            period: 300
+            length: 300
 
 # ── ServiceMonitor — auto-picked up by your Target Allocator ───────────────
 serviceMonitor:
