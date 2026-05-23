@@ -49,7 +49,7 @@ distributor:
 
 extraEnv:
 - name: AWS_REGION
-  value: ap-southeast-2
+  value: region
 - name: AWS_SDK_LOAD_CONFIG
   value: "true"
 
@@ -163,7 +163,7 @@ mimir:
     alertmanager_storage:
       backend: s3
       s3:
-        bucket_name: otel-metrics-your-account-id-ap-southeast-2
+        bucket_name: otel-metrics-your-account-id-region
 
     blocks_storage:
       backend: s3
@@ -191,7 +191,7 @@ mimir:
         # means newly compacted blocks become queryable faster
         sync_interval: 30s
       s3:
-        bucket_name: otel-metrics-your-account-id-ap-southeast-2
+        bucket_name: otel-metrics-your-account-id-region
       tsdb:
         block_ranges_period:
           - 2h
@@ -206,8 +206,8 @@ mimir:
       storage:
         backend: s3
         s3:
-          endpoint: s3.ap-southeast-2.amazonaws.com
-          region: ap-southeast-2
+          endpoint: s3.region.amazonaws.com
+          region: region
 
     compactor:
       block_ranges:
@@ -309,7 +309,7 @@ mimir:
     ruler_storage:
       backend: s3
       s3:
-        bucket_name: otel-metrics-your-account-id-ap-southeast-2
+        bucket_name: otel-metrics-your-account-id-region
 
     server:
       grpc_server_max_concurrent_streams: 1000

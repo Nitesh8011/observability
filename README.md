@@ -223,7 +223,7 @@ Apply retention policies to your S3 buckets:
 
 ```bash
 aws s3api put-bucket-lifecycle-configuration \
-  --bucket otel-logs-your-account-id-ap-southeast-2 \
+  --bucket otel-logs-your-account-id-region \
   --lifecycle-configuration file://tools/s3-lifecycle-policy/loki.json \
   --profile your-aws-profile
 ```

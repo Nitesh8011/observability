@@ -202,7 +202,7 @@ tempo:
         s3:
           bucket: tempo-traces
           endpoint: tempo-minio.tempo-ms.svc.cluster.local:9000
-          region: ap-southeast-2          # MinIO ignores region but field is required
+          region: region          # MinIO ignores region but field is required
           access_key: tempo
           secret_key: change-me-minio-password
           insecure: true             # MinIO runs plain HTTP inside cluster
