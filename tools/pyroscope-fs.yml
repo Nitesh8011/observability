@@ -31,7 +31,7 @@ minio:
       policy: none
       purge: false
   rootUser: pyroscope
-  rootPassword: oqckegiubclkzy5n2j3t
+  rootPassword: change-me-minio-password
   resources:
     requests:
       cpu: 100m
@@ -65,7 +65,7 @@ pyroscope:
         endpoint: pyroscope-minio.pyroscope-ms.svc.cluster.local:9000
         region: ap-southeast-2
         access_key_id: pyroscope
-        secret_access_key: oqckegiubclkzy5n2j3t
+        secret_access_key: change-me-minio-password
         insecure: true
 
     ingester:
@@ -268,11 +268,11 @@ ingress:
     nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
     nginx.ingress.kubernetes.io/auth-tls-verify-depth: "1"
   hosts:
-    - pyroscope-hub.prospecta.com
+    - pyroscope-hub.example.com
   tls:
     - secretName: pyroscope-tls
       hosts:
-        - pyroscope-hub.prospecta.com
+        - pyroscope-hub.example.com
 
 # ---------------------------------------------------------------------------
 # Monitoring

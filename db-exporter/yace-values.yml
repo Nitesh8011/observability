@@ -9,7 +9,7 @@ serviceAccount:
   create: true
   name: yace
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::597088041925:role/cw-otel-role
+    eks.amazonaws.com/role-arn: arn:aws:iam::444455556666:role/cw-otel-role
 
 # ── YACE AWS config ────────────────────────────────────────────────────────
 aws:
@@ -97,18 +97,18 @@ config: |
           statistics: [Average]
           period: 300
           length: 300
-          - name: DBLoad
-            statistics: [Average]
-            period: 300
-            length: 300
+        - name: DBLoad
+          statistics: [Average]
+          period: 300
+          length: 300
 
-    - name: fuse-auth-ohio-rds
+    - name: your-rds-instance-rds
       namespace: AWS/RDS
       regions:
         - us-east-2
       dimensions:
         - name: DBInstanceIdentifier
-          value: fuse-auth-ohio
+          value: your-rds-instance
       metrics:
         - name: CPUUtilization
           statistics: [Average, Maximum]
@@ -178,10 +178,10 @@ config: |
           statistics: [Average]
           period: 300
           length: 300
-          - name: DBLoad
-            statistics: [Average]
-            period: 300
-            length: 300
+        - name: DBLoad
+          statistics: [Average]
+          period: 300
+          length: 300
 
 # ── ServiceMonitor — auto-picked up by your Target Allocator ───────────────
 serviceMonitor:

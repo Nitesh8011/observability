@@ -16,20 +16,20 @@ spec:
     auth.azuread:
       allow_assign_grafana_admin: "true"
       allow_sign_up: "true"
-      allowed_groups: 98222ff2-5695-4f36-a7b5-6a2e570d3bb2,414d3337-d95e-4d35-b90a-685fa10bcd57,d68f3734-d72f-44a2-9af6-ed1ccedffec5
+      allowed_groups: 00000000-0000-0000-0000-000000000010,00000000-0000-0000-0000-000000000011,00000000-0000-0000-0000-000000000012
       api_url: https://graph.microsoft.com/oidc/userinfo
       auth_url: https://login.microsoftonline.com/$__env{AZURE_TENANT_ID}/oauth2/v2.0/authorize
       client_id: $__env{AZURE_CLIENT_ID}
       client_secret: $__env{AZURE_CLIENT_SECRET}
       enabled: "true"
       name: Azure AD
-      org_mapping: 98222ff2-5695-4f36-a7b5-6a2e570d3bb2:1:Admin
-        d68f3734-d72f-44a2-9af6-ed1ccedffec5:1:Editor
-        414d3337-d95e-4d35-b90a-685fa10bcd57:1:Viewer
-      role_attribute_path: contains(groups[*], '98222ff2-5695-4f36-a7b5-6a2e570d3bb2')
+      org_mapping: 00000000-0000-0000-0000-000000000010:1:Admin
+        00000000-0000-0000-0000-000000000012:1:Editor
+        00000000-0000-0000-0000-000000000011:1:Viewer
+      role_attribute_path: contains(groups[*], '00000000-0000-0000-0000-000000000010')
         && 'Admin' || contains(groups[*],
-        'd68f3734-d72f-44a2-9af6-ed1ccedffec5') && 'Editor' ||
-        contains(groups[*], '414d3337-d95e-4d35-b90a-685fa10bcd57') && 'Viewer'
+        '00000000-0000-0000-0000-000000000012') && 'Editor' ||
+        contains(groups[*], '00000000-0000-0000-0000-000000000011') && 'Viewer'
         || 'Viewer'
       scopes: openid email profile
       skip_org_role_sync: "false"
@@ -40,7 +40,7 @@ spec:
     explore:
       enabled: "true"
     server:
-      root_url: https://grafana.prospecta.com
+      root_url: https://grafana.example.com
       serve_from_sub_path: "false"
     session:
       session_life_time: "3600"
@@ -74,7 +74,7 @@ spec:
     spec:
       ingressClassName: nginx
       rules:
-        - host: grafana.prospecta.com
+        - host: grafana.example.com
           http:
             paths:
               - backend:
@@ -86,6 +86,6 @@ spec:
                 pathType: Prefix
       tls:
         - hosts:
-            - grafana.prospecta.com
-          secretName: star-prospecta-com
+            - grafana.example.com
+          secretName: star-example-com
   version: docker.io/grafana/grafana:main

@@ -139,7 +139,7 @@ tempo:
         # Reduced from 5m → 2m: more frequent blocklist refresh = faster trace visibility after flush
         blocklist_poll: 2m
         s3:
-          bucket: otel-traces-597088041925-ap-southeast-2-an
+          bucket: otel-traces-your-account-id-ap-southeast-2
           endpoint: s3.ap-southeast-2.amazonaws.com
           region: ap-southeast-2
           insecure: false

@@ -61,7 +61,7 @@ minio:
       policy: none
       purge: false
   rootUser: tempo
-  rootPassword: oqckegiubclkzy5n2j3t
+  rootPassword: change-me-minio-password
   resources:
     requests:
       cpu: 100m
@@ -204,7 +204,7 @@ tempo:
           endpoint: tempo-minio.tempo-ms.svc.cluster.local:9000
           region: ap-southeast-2          # MinIO ignores region but field is required
           access_key: tempo
-          secret_key: oqckegiubclkzy5n2j3t
+          secret_key: change-me-minio-password
           insecure: true             # MinIO runs plain HTTP inside cluster
           forcepathstyle: true       # required for MinIO path-style access
         wal:

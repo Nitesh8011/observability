@@ -12,10 +12,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - otel-gateway.prospecta.com
+        - otel-gateway.example.com
       secretName: otel-gateway-tls
   rules:
-    - host: otel-gateway.prospecta.com
+    - host: otel-gateway.example.com
       http:
         paths:
           - path: /

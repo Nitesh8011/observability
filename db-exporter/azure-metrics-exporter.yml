@@ -13,16 +13,16 @@ serviceAccount:
   create: true
   name: azure-metrics-exporter
   annotations:
-    azure.workload.identity/client-id: "d4f70483-2475-42d3-b7b7-954def2a7aaa"
+    azure.workload.identity/client-id: "00000000-0000-0000-0000-000000000001"
 
 # ── Azure auth env vars — injected automatically by workload identity ──────
 # AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_FEDERATED_TOKEN_FILE
 # are all injected by the workload identity webhook — no secrets needed
 env:
   - name: AZURE_TENANT_ID
-    value: "4d7ab632-40a4-4294-bb5f-4eea5ceb4ab7"
+    value: "00000000-0000-0000-0000-000000000002"
   - name: AZURE_SUBSCRIPTION_ID
-    value: "a959744b-354d-482c-80ba-d4acb20a3a8b"
+    value: "00000000-0000-0000-0000-000000000003"
 
 # ── ServiceMonitor — auto-picked up by your Target Allocator ──────────────
 serviceMonitor:
@@ -35,7 +35,7 @@ serviceMonitor:
   # Pass query params to the probe endpoint for PostgreSQL Flexible Server
   params:
     name: ["azure_postgresql_flexibleserver"]
-    subscription: ["a959744b-354d-482c-80ba-d4acb20a3a8b"]
+    subscription: ["00000000-0000-0000-0000-000000000003"]
     filter: ["resourceType eq 'Microsoft.DBforPostgreSQL/flexibleServers'"]
     metric:
       - cpu_percent

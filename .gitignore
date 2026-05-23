@@ -1,1 +1,11 @@
-agent-otel.yml
+# Local override files with real credentials/endpoints — never commit these
+*.local.yml
+*.local.yaml
+*.secret.yml
+*.secret.yaml
+secrets/
+.env
+alloy
+tools/s3-helm/jaeger.yml
+tools/s3-helm/jaeger-otel.yml
+.claude

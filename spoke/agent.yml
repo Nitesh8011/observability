@@ -16,7 +16,7 @@ spec:
     exporters:
       otlp:
         compression: zstd
-        endpoint: 'otel-gateway.prospecta.com:443'
+        endpoint: 'otel-gateway.example.com:443'
         headers:
           authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
         retry_on_failure:
@@ -28,25 +28,6 @@ spec:
           enabled: true
           num_consumers: 16
           queue_size: 5000
-        timeout: 30s
-        tls:
-          ca_file: /client-ca/ca.crt
-          cert_file: /client-tls/tls.crt
-          insecure: false
-          key_file: /client-tls/tls.key
-      otlp/pulsar-metrics:
-        endpoint: 'otel-gateway.prospecta.com:443'
-        headers:
-          authorization: 'Bearer ${env:OTEL_AUTH_TOKEN}'
-        retry_on_failure:
-          enabled: true
-          initial_interval: 5s
-          max_elapsed_time: 300s
-          max_interval: 30s
-        sending_queue:
-          enabled: true
-          num_consumers: 4
-          queue_size: 1000
         timeout: 30s
         tls:
           ca_file: /client-ca/ca.crt
@@ -133,7 +114,7 @@ spec:
         attributes:
           - action: insert
             key: cluster.name
-            value: FUSE-INTERNAL
+            value: YOUR-CLUSTER-NAME
       transform/add_cluster_label:
         metric_statements:
           - context: datapoint
@@ -196,10 +177,18 @@ spec:
         logs:
           log_record:
             - body != nil and Len(body) > 500
+
+      # ── NEW: trim oversized attribute values, keep body intact ──────────────
+      # Runs after severity/length filters so only survivors are transformed.
+      transform/trim_log_attributes:
+        log_statements:
+          - context: log
+            statements:
+              - truncate_all(attributes, 128)
       batch:
-        send_batch_max_size: 1024
-        send_batch_size: 512
-        timeout: 5s
+        send_batch_max_size: 2048
+        send_batch_size: 1024
+        timeout: 10s
       memory_limiter/metrics:
         check_interval: 5s
         limit_mib: 256
@@ -255,6 +244,7 @@ spec:
             - resource
             - resource/cleanup
             - filter/drop_long_logs
+            - transform/trim_log_attributes
             - batch
           receivers:
             - filelog
@@ -442,7 +432,7 @@ metadata:
   name: otel-agent-collector
   namespace: opentelemetry
   annotations:
-    eks.amazonaws.com/role-arn: arn:aws:iam::448049790823:role/cw-otel-role
+    eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/cw-otel-role
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -509,7 +499,7 @@ subjects:
 #    aws iam create-policy \
 #      --policy-name otel-agent-cloudwatch-policy \
 #      --policy-document file://cloudwatch-policy.json \
-#      --profile fuse-internal
+#      --profile your-aws-profile
 #
 # 2. Create IRSA role and attach to service account:
 #
@@ -521,7 +511,7 @@ subjects:
 #      --attach-policy-arn arn:aws:iam::<account-id>:policy/otel-agent-cloudwatch-policy \
 #      --override-existing-serviceaccounts \
 #      --approve \
-#      --profile fuse-internal
+#      --profile your-aws-profile
 #
 # 3. Create credentials secret:
 #

@@ -216,7 +216,7 @@ spec:
 # After applying, get the external IP:
 #   kubectl get svc otel-gateway-external -n opentelemetry
 # Then point your DNS:
-#   otel-gateway.prospecta.com → <EXTERNAL-IP>
+#   otel-gateway.example.com → <EXTERNAL-IP>
 #
 # Cloud-specific annotations (uncomment the one that applies):
 # apiVersion: v1

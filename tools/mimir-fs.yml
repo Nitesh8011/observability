@@ -179,7 +179,7 @@ minio:
       policy: none
       purge: false
   rootUser: mimir
-  rootPassword: oqckegiubclkzy5n2j3t
+  rootPassword: change-me-minio-password
   resources:
     requests:
       cpu: 100m
@@ -202,7 +202,7 @@ mimir:
         endpoint: mimir-minio.mimir-ms.svc.cluster.local:9000
         region: us-east-1          # MinIO ignores region but field is required
         access_key_id: mimir
-        secret_access_key: oqckegiubclkzy5n2j3t
+        secret_access_key: change-me-minio-password
         insecure: true             # MinIO runs plain HTTP inside cluster
         http:
           insecure_skip_verify: true
@@ -218,7 +218,7 @@ mimir:
         endpoint: mimir-minio.mimir-ms.svc.cluster.local:9000
         region: us-east-1
         access_key_id: mimir
-        secret_access_key: oqckegiubclkzy5n2j3t
+        secret_access_key: change-me-minio-password
         insecure: true
         http:
           insecure_skip_verify: true
@@ -263,7 +263,7 @@ mimir:
           endpoint: mimir-minio.mimir-ms.svc.cluster.local:9000
           region: us-east-1
           access_key_id: mimir
-          secret_access_key: oqckegiubclkzy5n2j3t
+          secret_access_key: change-me-minio-password
           insecure: true
           http:
             insecure_skip_verify: true
@@ -382,7 +382,7 @@ mimir:
         endpoint: mimir-minio.mimir-ms.svc.cluster.local:9000
         region: us-east-1
         access_key_id: mimir
-        secret_access_key: oqckegiubclkzy5n2j3t
+        secret_access_key: change-me-minio-password
         insecure: true
         http:
           insecure_skip_verify: true

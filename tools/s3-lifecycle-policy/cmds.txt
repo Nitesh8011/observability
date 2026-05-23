@@ -1,11 +1,11 @@
 # Loki
 aws s3api put-bucket-lifecycle-configuration \
-  --bucket otel-logs-597088041925-ap-southeast-2-an \
+  --bucket otel-logs-your-account-id-ap-southeast-2 \
   --lifecycle-configuration file://tools/s3-lifecycle-policy/loki.json \
-  --profile mdo-v3
+  --profile your-aws-profile
 
 # Mimir
 aws s3api put-bucket-lifecycle-configuration \
-  --bucket otel-metrics-597088041925-ap-southeast-2-an \
+  --bucket otel-metrics-your-account-id-ap-southeast-2 \
   --lifecycle-configuration file://tools/s3-lifecycle-policy/mimir.json \
-  --profile mdo-v3
+  --profile your-aws-profile

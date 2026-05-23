@@ -22,7 +22,7 @@ spec:
         name:
           - "azure_postgresql_flexibleserver"
         subscription:
-          - "a959744b-354d-482c-80ba-d4acb20a3a8b"
+          - "00000000-0000-0000-0000-000000000003"
         filter:
           - "resourceType eq 'Microsoft.DBforPostgreSQL/flexibleServers'"
         metric:

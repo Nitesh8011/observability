@@ -163,7 +163,7 @@ mimir:
     alertmanager_storage:
       backend: s3
       s3:
-        bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+        bucket_name: otel-metrics-your-account-id-ap-southeast-2
 
     blocks_storage:
       backend: s3
@@ -191,7 +191,7 @@ mimir:
         # means newly compacted blocks become queryable faster
         sync_interval: 30s
       s3:
-        bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+        bucket_name: otel-metrics-your-account-id-ap-southeast-2
       tsdb:
         block_ranges_period:
           - 2h
@@ -309,7 +309,7 @@ mimir:
     ruler_storage:
       backend: s3
       s3:
-        bucket_name: otel-metrics-597088041925-ap-southeast-2-an
+        bucket_name: otel-metrics-your-account-id-ap-southeast-2
 
     server:
       grpc_server_max_concurrent_streams: 1000

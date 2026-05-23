@@ -14,8 +14,8 @@ helm upgrade --install memcached oci://registry-1.docker.io/bitnamicharts/memcac
 
 
 
-otel-logs-597088041925-ap-southeast-2-an
-otel-metrics-597088041925-ap-southeast-2-an
+otel-logs-your-account-id-ap-southeast-2
+otel-metrics-your-account-id-ap-southeast-2
 
 
 nginx ingress crd
