@@ -1,0 +1,13 @@
+receivers:
+  profiling:
+    samples_per_second: 97
+exporters:
+  otlp/collector:
+    endpoint: collector:4317
+    tls:
+      insecure: true
+service:
+  pipelines:
+    profiles:
+      receivers: [profiling]
+      exporters: [otlp/collector]

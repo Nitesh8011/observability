@@ -45,6 +45,7 @@ A production-grade observability platform for Kubernetes running on AWS EKS and 
 | Logs    | OTel Agent → Gateway → Loki  | AWS S3 / MinIO |
 | Metrics | OTel Agent → Gateway → Mimir | AWS S3 / MinIO |
 | Traces  | OTel Agent → Gateway → Tempo | AWS S3 / MinIO |
+| Profiles | OTel Agent → Gateway → Pyroscope (OTLP/gRPC, experimental) | MinIO |
 
 ---
 
@@ -103,6 +104,62 @@ A production-grade observability platform for Kubernetes running on AWS EKS and 
 | cert-manager              | Issues mTLS certs for spoke↔hub              |
 | NGINX Ingress Controller  | For Kubernetes-based hub ingress             |
 | AWS EKS Pod Identity/IRSA | For S3 and CloudWatch access (EKS spokes)    |
+
+---
+
+## Local Cluster with Minikube
+
+Use this to try the stack on a laptop. The hub and spoke both run in one cluster.
+
+```bash
+# Create the cluster (adjust --cpus / --memory to what your machine can spare)
+minikube start \
+  --profile observability \
+  --driver=docker \
+  --kubernetes-version=v1.30.0 \
+  --cpus=8 \
+  --memory=16384 \
+  --disk-size=60g
+
+# Addons: NGINX ingress + metrics-server
+minikube addons enable ingress -p observability
+minikube addons enable metrics-server -p observability
+
+# Helm repos
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo add jetstack https://charts.jetstack.io
+helm repo add open-telemetry https://open-telemetry.github.io/opentelemetry-helm-charts
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+
+# cert-manager (required by the OTel Operator and for mTLS certs)
+helm upgrade --install cert-manager jetstack/cert-manager \
+  -n cert-manager --create-namespace --set crds.enabled=true
+
+# OTel Operator and Prometheus Operator CRDs
+helm upgrade --install opentelemetry-operator open-telemetry/opentelemetry-operator \
+  -n opentelemetry --create-namespace \
+  --set manager.collectorImage.repository=ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib
+helm upgrade --install prometheus-operator-crds prometheus-community/prometheus-operator-crds
+```
+
+Useful commands:
+
+```bash
+minikube status -p observability
+minikube dashboard -p observability
+minikube tunnel -p observability          # expose LoadBalancer / ingress on localhost
+minikube stop -p observability            # pause, keeps data
+minikube delete -p observability          # remove the cluster entirely
+
+# Resize an existing cluster (requires delete + recreate)
+minikube delete -p observability && minikube start -p observability --cpus=12 --memory=24576
+```
+
+> **Sizing note:** the values in `tools/` and `hub/gateway.yml` are production-sized (3 replicas,
+> pod anti-affinity, 12Gi gateway limit, 600Gi MinIO PVCs). On Minikube, lower replica counts,
+> replication factors, resource requests and PVC sizes, otherwise pods will stay `Pending`.
+> On Docker Desktop, raise the VM limits (Settings → Resources) above the `--cpus` / `--memory` you request.
 
 ---
 

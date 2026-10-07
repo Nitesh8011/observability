@@ -1,0 +1,6 @@
+# Single-binary Pyroscope. Maps the profiler's process name to service_name.
+limits:
+  ingestion_relabeling_rules:
+    - action: labelmap
+      regex: ^process.executable.name$
+      replacement: service_name

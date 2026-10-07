@@ -1,0 +1,28 @@
+# Local test for the profiling path: eBPF profiler -> collector -> Pyroscope.
+# The profiler is Linux-only (needs a real Linux kernel; not macOS / Docker Desktop).
+services:
+  pyroscope:
+    image: grafana/pyroscope:latest
+    command: ["-config.file=/etc/pyroscope/config.yaml"]
+    ports: ["4040:4040"]
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+
+  collector:                       # stands in for the agent / gateway
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otel.yaml", "--feature-gates=service.profilesSupport"]
+    volumes:
+      - ./collector.yaml:/etc/otel.yaml:ro
+    depends_on: [pyroscope]
+
+  profiler:                        # Linux only
+    image: otel/opentelemetry-collector-ebpf-profiler:latest
+    command: ["--config=/etc/otel.yaml", "--feature-gates=service.profilesSupport"]
+    privileged: true
+    pid: host
+    volumes:
+      - ./profiler.yaml:/etc/otel.yaml:ro
+      - /sys/kernel/debug:/sys/kernel/debug:ro
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+      - /proc:/proc:ro
+    depends_on: [collector]

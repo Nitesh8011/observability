@@ -275,6 +275,19 @@ spec:
             - batch
           receivers:
             - otlp
+        # Profiles (experimental signal) — requires the service.profilesSupport
+        # feature gate (see spec.args below). Apps / an OTLP profiler push to
+        # the otlp receiver; resource/cleanup is skipped so pod/container
+        # attributes stay available as Pyroscope labels.
+        profiles:
+          exporters:
+            - otlp
+          processors:
+            - memory_limiter
+            - k8s_attributes
+            - resource
+          receivers:
+            - otlp
       telemetry:
         logs:
           level: info
@@ -308,6 +321,8 @@ spec:
           fieldPath: spec.nodeName
   managementState: managed
   upgradeStrategy: automatic
+  args:
+    feature-gates: service.profilesSupport
   volumeMounts:
     - mountPath: /client-tls
       name: client-tls

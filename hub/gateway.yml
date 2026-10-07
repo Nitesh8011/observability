@@ -49,6 +49,22 @@ spec:
           num_consumers: 5
           queue_size: 5000
         timeout: 120s
+      # Pyroscope ingests OTLP profiles natively over gRPC on its HTTP port.
+      otlp/pyroscope:
+        endpoint: pyroscope-distributor.pyroscope-ms:4040
+        compression: zstd
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 300s
+          max_interval: 30s
+        sending_queue:
+          enabled: true
+          num_consumers: 5
+          queue_size: 5000
+        timeout: 60s
+        tls:
+          insecure: true
     extensions:
       bearertokenauth/agents:
         token: ${env:OTEL_AUTH_TOKEN}
@@ -130,6 +146,14 @@ spec:
             - batch/traces
           receivers:
             - otlp
+        # Experimental signal — needs the service.profilesSupport feature gate.
+        profiles:
+          exporters:
+            - otlp/pyroscope
+          processors:
+            - memory_limiter
+          receivers:
+            - otlp
       telemetry:
         logs:
           encoding: json
@@ -142,6 +166,8 @@ spec:
                   prometheus:
                     host: 0.0.0.0
                     port: 8888
+  args:
+    feature-gates: service.profilesSupport
   configVersions: 3
   daemonSetUpdateStrategy: {}
   deploymentUpdateStrategy:

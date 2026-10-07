@@ -1,0 +1,16 @@
+# Same shape as the profiles path in hub/gateway.yml, without mTLS / auth.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+exporters:
+  otlp/pyroscope:
+    endpoint: pyroscope:4040
+    tls:
+      insecure: true
+service:
+  pipelines:
+    profiles:
+      receivers: [otlp]
+      exporters: [otlp/pyroscope]
